@@ -1,3 +1,8 @@
+# My ignores
+test/request_logs/
+.VSCodeCounter
+logs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
