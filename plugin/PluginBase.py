@@ -15,7 +15,7 @@ class PluginMeta(ABCMeta):
         new_class = super().__new__(cls, name, bases, namespace)
 
         # 如果不是基类，则实例化并存储插件
-        if name != "PluginBase":
+        if namespace["usable"]:
             plugin_instance = new_class()
             cls.plugins.append(plugin_instance)
             logger.info(f"注册插件: {plugin_instance.pluginName}")
@@ -24,7 +24,7 @@ class PluginMeta(ABCMeta):
 
 class PluginBase(ABC, metaclass=PluginMeta):
     messageStartWith = ""  # only use for plugins that reply message startwith /
-    def __init__(self): ...
+    usable = False
 
     @property
     @abstractmethod

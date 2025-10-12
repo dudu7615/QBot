@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from modules.Logger import logger
-from plugin import PluginMeta, PluginBase, MessageType, MessageData
+from modules.Types import MessageData
+from plugin import PluginMeta
 
 
 class MainServer:

@@ -1,7 +1,10 @@
-from plugin.PluginBase import PluginBase, MessageType, MessageData, logger
+from .PluginBase import PluginBase, MessageType, MessageData, logger
 from modules import HttpSender
+
+
 class TestAutoReply(PluginBase):
     messageStartWith = ""  # only use for plugins that reply message startwith /
+    usable = True
 
     @property
     def messageType(self) -> MessageType.Group | MessageType.Person:
