@@ -17,7 +17,7 @@ async def sendText2Person(
     if token.expires_in < datetime.now():
         for _ in range(5):
             token_ = await AutoAuth.getAccessToken(
-                Config.config["appId"], Config.config["clientSecret"]
+                Config.config["appId"], Config.config["clientSecret"], client
             )
             if token_:
                 break
@@ -26,7 +26,7 @@ async def sendText2Person(
             return
         token = token_
 
-    headers = {"Authorization": f"QQBot {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"QQBot {token.access_token}", "Content-Type": "application/json"}
     data: dict[str, Union[str, int]] = {
         "content": message,
         "msg_type": 0,
