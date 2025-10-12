@@ -1,5 +1,5 @@
-from plugin.PluginBase import PluginBase, MessageType, MessageData, client, logger
-
+from plugin.PluginBase import PluginBase, MessageType, MessageData, logger
+from modules import HttpSender
 class TestAutoReply(PluginBase):
     messageStartWith = ""  # only use for plugins that reply message startwith /
 
@@ -17,16 +17,4 @@ class TestAutoReply(PluginBase):
         author_id = message["d"]["author"]["id"]
         reply_content = f"Auto-reply to your message: {content}"
 
-        # 假设有一个发送消息的API端点
-        api_url = "http://example.com/api/send_message"
-        payload = {
-            "recipient_id": author_id,
-            "message": reply_content
-        }
-
-        try:
-            response = await client.post(api_url, json=payload)
-            response.raise_for_status()
-            logger.info(f"Sent auto-reply to {author_id}")
-        except Exception as e:
-            logger.error(f"Failed to send auto-reply: {e}")
+        await HttpSender.sendText2Person(reply_content, message, author_id)
