@@ -1,4 +1,4 @@
-from .PluginBase import PluginBase, MessageType, MessageData, logger
+from .PluginBase import PluginBase, MessageType, MessageData
 from modules import HttpSender
 
 
