@@ -15,7 +15,6 @@ class TestAutoReply(PluginBase):
         return "Test Auto Reply"
 
     async def run(self, message: MessageData):
-        logger.info("Running Test Auto Reply Plugin")
         content = message["d"]["content"]
         author_id = message["d"]["author"]["id"]
         reply_content = f"Auto-reply to your message: {content}"

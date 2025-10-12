@@ -13,7 +13,7 @@ class MainServer:
         self.app.post("/")(self.handleMessage)
 
     async def handleMessage(self, message: MessageData):
-        logger.info(f"Received message")
+        logger.info(f"Received message - {message['d']['content']}")
         content = message["d"]["content"]
         message_type = message["t"]
         

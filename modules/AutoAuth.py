@@ -17,9 +17,8 @@ async def getAccessToken(appId: str, appSecret: str, client: AsyncClient) -> Acc
     data = {"appId": appId, "clientSecret": appSecret}
     response = await client.post(url, headers=headers, json=data)
     if response.status_code == 200:
-        logger.info(f"获取AccessToken成功: {response.json()}")
         resp_json = response.json()
-        logger.debug(f"获取AccessToken成功: {resp_json}")
+        logger.info(f"获取AccessToken成功: {response.json()["access_token"]}")
         return AccessToken(
             access_token=resp_json.get("access_token"),
             expires_in=datetime.now()
@@ -28,5 +27,5 @@ async def getAccessToken(appId: str, appSecret: str, client: AsyncClient) -> Acc
             ),  # -30 to keep it usable and reget on time
         )
     else:
-        logger.error(f"获取AccessToken失败: {response.status_code} - {response.text}")
+        logger.warning(f"获取AccessToken失败: {response.status_code} - {response.text}")
         return None
