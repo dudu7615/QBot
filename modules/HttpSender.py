@@ -33,4 +33,17 @@ async def sendText2Person(
         "msg_id": recievedMessage["d"]["id"],
         "event_id": recievedMessage["id"],
     }
-    await client.post(url, json=data, headers=headers)
+    resq = None
+    for _ in range(3):
+        resq_ = await client.post(url, json=data, headers=headers)
+        if resq_.status_code == 200:
+            resq = resq_
+            break
+    else:
+        if resq is not None:
+            logger.error(f"发送消息失败: {resq.status_code} - {resq.text["message"]}")
+        else:
+            logger.error("发送消息失败: 无法建立连接")
+        return
+
+    logger.info(f"发送消息成功: {resq.json()}")
