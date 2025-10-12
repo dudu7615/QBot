@@ -1,0 +1,22 @@
+### 获取调用凭证
+POST https://bots.qq.com/app/getAppAccessToken
+Content-Type: application/json
+
+{
+  "appId": "102802595",
+  "clientSecret": "Tfr3FRer4HUhu8Mao2GUjyDShwBRhxDT"
+}
+
+
+
+### 发送消息给我
+POST https://api.sgroup.qq.com/v2/users/FEBB2785438F1BB544E891A7C8E4370F/messages
+Authorization: QQBot LfuWMmKllqUq0LtLn3COLojJMT9ULpcpeEBmjd0TBRErE4wUuidtWbVWO0zhq-MHxIGI2LkIKw-r
+Content-Type: application/json
+
+{
+  "content": "hello world",
+  "msg_type": 0,
+  "msg_id": "ROBOT1.0_HrGkdBu0e.iukBxft-ka-fsQjrSQ.RU3rdBgDIc9GZYzY4OfwGttvjkEmsLTshkeEz1.zTlHvuLWoRB7OXWGvAjlj6H3wBCAbx3PilKrAso!",
+  "event_id": "C2C_MESSAGE_CREATE:zlmslq1hovh81xddrbzuln516w82qj5bf3bvgbmm39nfuohchhcigml0xmisoz2"
+}
