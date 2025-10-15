@@ -1,6 +1,7 @@
 from modules.HttpSender import client
 from modules.Logger import logger
 from plugin.GlmAi_d.Types import ApiJson, ApiJson_Messages
+from plugin.GlmAi_d.Config import config
 
 url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
@@ -17,7 +18,7 @@ async def RequApi(messages: str, openId: str) -> str:
         "thinking": {"type": "disabled"},
     }
     headers = {
-        "Authorization": "Bearer 6d1847d3044742498efb0c63b37bc904.fstXIOTUYIKZI4oa",
+        "Authorization": f"Bearer {config['apiKey']}",
         # "Content-Type": "application/json",
     }
     logger.info(f"请求数据: {payloda}")
