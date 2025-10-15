@@ -4,7 +4,7 @@ from modules import HttpSender
 
 class TestAutoReply(PluginBase):
     messageStartWith = ""  # only use for plugins that reply message startwith /
-    usable = True
+    usable = False
 
     @property
     def messageType(self) -> MessageType.Group | MessageType.Person:
