@@ -11,7 +11,7 @@ async def RequApi(messages: str, openId: str) -> str:
     history = PersonHistory(openId)
     if history.getHistory():
         payloda: ApiJson = {
-            "model": "glm-4.5-flash",
+            "model": "GLM-4-Flash-250414",
             "messages": history.getHistory() + [{"role": "user", "content": messages}],
             "stream": False,
             "temperature": 0.7,
