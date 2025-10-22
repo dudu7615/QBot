@@ -8,6 +8,7 @@ class MainServer:
     plugins = PluginMeta.plugins
 
     def __init__(self):
+        self.managedMessage: list[str] = []
         self.app = FastAPI()
 
         self.app.post("/")(self.handleMessage)
@@ -16,6 +17,9 @@ class MainServer:
         logger.info(f"Received message - {message['d']['content']}")
         content = message["d"]["content"]
         message_type = message["t"]
+        if message["d"]["id"] in self.managedMessage:
+            logger.info("Message already handled, skipping...")
+            return
         
         # 统一处理插件调用逻辑
         for plugin in self.plugins:
