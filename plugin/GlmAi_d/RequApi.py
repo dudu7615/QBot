@@ -36,7 +36,7 @@ async def RequApi(messages: str, openId: str) -> str:
         "Authorization": f"Bearer {config['apiKey']}",
         # "Content-Type": "application/json",
     }
-    logger.info(f"请求数据: {payloda}")
+    logger.info(f"请求Glm openid: {openId}, 请求内容: {messages}")
     history.addHistory(
         ApiJson_Messages(
             role="user",
@@ -52,6 +52,7 @@ async def RequApi(messages: str, openId: str) -> str:
                 content=aiReply,
             )
         )
+        logger.info(f"Glm: openid: {openId}, 回复内容: {aiReply}")
         return aiReply
         
     else:
