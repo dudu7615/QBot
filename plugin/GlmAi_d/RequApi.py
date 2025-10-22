@@ -37,6 +37,12 @@ async def RequApi(messages: str, openId: str) -> str:
         # "Content-Type": "application/json",
     }
     logger.info(f"请求数据: {payloda}")
+    history.addHistory(
+        ApiJson_Messages(
+            role="user",
+            content=messages,
+        )
+    )
     response = await client.post(url, headers=headers, json=payloda, timeout=60)
     if response.status_code == 200:
         aiReply =  response.json()["choices"][0]["message"]["content"]
