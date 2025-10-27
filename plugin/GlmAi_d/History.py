@@ -6,7 +6,9 @@ class PersonHistory:
     def __init__(self, openId: str):
         self.openId = openId
         self.path = Paths.HISTORY / f"{self.openId}.yaml"
+        
         if not self.path.exists():
+            self.history = []
             with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
                 yaml.dump(self.history, f, allow_unicode=True)
         else:
