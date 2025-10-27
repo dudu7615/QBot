@@ -1,0 +1,5 @@
+version: '1'
+
+github:
+  ignore_labels:
+    - generic-api-key
