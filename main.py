@@ -21,6 +21,8 @@ class MainServer:
             logger.warning("Message already handled, skipping...")
             return
         self.managedMessage.append(message["d"]["id"])
+        if len(self.managedMessage) > 1000:
+            self.managedMessage = self.managedMessage[-500:]
         logger.info(f"Received message - {message['d']['content']}")
         
         # 统一处理插件调用逻辑
