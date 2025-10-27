@@ -1,0 +1,8 @@
+version: "1"
+
+rule_settings:
+  enable:
+    - default
+  disable:
+    - generic-api-key
+    - gitleaks-generic-api-key
