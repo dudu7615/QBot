@@ -25,6 +25,7 @@ class GlmAi(PluginBase):
             match command:
                 case "clear":
                     PersonHistory(author["id"]).clearHistory()
+                    
                     await HttpSender.sendText2Person("已清空历史记录", message, author["id"])
                 case _:
                     logger.warning(f"未知命令: {command}")

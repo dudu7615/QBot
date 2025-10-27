@@ -1,4 +1,5 @@
 from plugin.GlmAi_d import Paths, Types
+from plugin.GlmAi_d.Config import config
 import yaml
 
 class PersonHistory:
@@ -14,7 +15,16 @@ class PersonHistory:
 
         if not self.history:
             self.history = []
-    
+            self.loadSystemPrompt()
+
+    def loadSystemPrompt(self) -> None:
+        with open(Paths.PERSONALITY / f"{config['personality']}", "r", encoding="utf-8") as f:
+            systemPrompt: Types.ApiJson_Messages = {
+                "role": "system",
+                "content": f.read()
+            }
+            self.history.insert(0, systemPrompt)
+
     def addHistory(self, message: Types.ApiJson_Messages) -> None:
         self.history.append(message)
         with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
@@ -25,5 +35,6 @@ class PersonHistory:
     
     def clearHistory(self) -> None:
         self.history = []
+        self.loadSystemPrompt()
         with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
             yaml.dump(self.history, f, allow_unicode=True, Dumper=yaml.Dumper)
