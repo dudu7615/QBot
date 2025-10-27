@@ -43,17 +43,22 @@ async def RequApi(messages: str, openId: str) -> str:
             content=messages,
         )
     )
-    response = await client.post(url, headers=headers, json=payloda, timeout=60)
-    if response.status_code == 200:
-        aiReply =  response.json()["choices"][0]["message"]["content"]
-        history.addHistory(
-            ApiJson_Messages(
-                role="assistant",
-                content=aiReply,
-            )
-        )
-        logger.info(f"Glm: openid: {openId}, 回复内容: {aiReply}")
-        return aiReply
-        
-    else:
-        return "请求错误"
+
+    for _ in range(3):
+        try:
+            response = await client.post(url, headers=headers, json=payloda, timeout=60)
+            if response.status_code == 200:
+                aiReply =  response.json()["choices"][0]["message"]["content"]
+                history.addHistory(
+                    ApiJson_Messages(
+                        role="assistant",
+                        content=aiReply,
+                    )
+                )
+                logger.info(f"Glm: openid: {openId}, 回复内容: {aiReply}")
+                return aiReply
+                
+        except Exception as e:
+            logger.error(f"Glm 接口请求异常: {e}")
+
+    return "抱歉，Glm接口请求失败，请稍后再试。"
