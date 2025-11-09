@@ -5,9 +5,14 @@ from typing import Any
 ROOT = Path(__file__).parent
 sqlDir = ROOT / "sql"
 class Sql:
-    # def __init__(self):
-    #     self.conn = sqlite3.connect(ROOT / "data" / "chat.db")
-    #     self.cur = self.conn.cursor()
+    def __init__(self):
+        if not (ROOT / "data" / "chat.db").exists():
+            (ROOT / "data").mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(ROOT / "data" / "chat.db")
+            self.cur = self.conn.cursor()
+            self.run("init")
+            self.conn.commit()
+            self.conn.close()
 
     # def __del__(self):
     #     self.conn.close()
