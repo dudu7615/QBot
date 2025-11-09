@@ -1,42 +1,53 @@
 from plugin.GlmAi_d import Paths, Types
 from plugin.GlmAi_d.Config import config
-import yaml
+from plugin.GlmAi_d.Sql import Sql
+
 
 class PersonHistory:
     def __init__(self, openId: str):
         self.openId = openId
-        self.path = Paths.HISTORY / f"{self.openId}.yaml"
-        
-        if not self.path.exists():
-            self.history = []
-            with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
-                yaml.dump(self.history, f, allow_unicode=True)
-        else:
-            with open(Paths.HISTORY / f"{self.openId}.yaml", "r+", encoding="utf-8") as f:
-                self.history: list[Types.ApiJson_Messages] = yaml.load(f, Loader=yaml.FullLoader)
 
-        if not self.history:
-            self.history = []
-            self.loadSystemPrompt()
+        with Sql() as db:
+            if not db("message/get", {"open_id": self.openId}):
+                self._loadSystemPrompt(db)
 
-    def loadSystemPrompt(self) -> None:
-        with open(Paths.PERSONALITY / f"{config['personality']}", "r", encoding="utf-8") as f:
+    def _loadSystemPrompt(self, db: Sql) -> None:
+        with open(
+            Paths.PERSONALITY / f"{config['personality']}", "r", encoding="utf-8"
+        ) as f:
             systemPrompt: Types.ApiJson_Messages = {
                 "role": "system",
-                "content": f.read()
+                "content": f.read(),
             }
-            self.history.insert(0, systemPrompt)
+
+            db(
+                "message/add",
+                {
+                    "open_id": self.openId,
+                    "role": systemPrompt["role"],
+                    "content": systemPrompt["content"],
+                },
+            )
 
     def addHistory(self, message: Types.ApiJson_Messages) -> None:
-        self.history.append(message)
-        with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
-            yaml.dump(self.history, f, allow_unicode=True)
+        with Sql() as db:
+            db(
+                "message/add",
+                {
+                    "open_id": self.openId,
+                    "role": message["role"],
+                    "content": message["content"],
+                },
+            )
 
     def getHistory(self) -> list[Types.ApiJson_Messages]:
-        return self.history
-    
+        with Sql() as db:
+            return [
+                {"role": role, "content": content}
+                for role, content in db("message/get", {"open_id": self.openId})
+            ]
+
     def clearHistory(self) -> None:
-        self.history = []
-        self.loadSystemPrompt()
-        with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
-            yaml.dump(self.history, f, allow_unicode=True, Dumper=yaml.Dumper)
+        with Sql() as db:
+            db("message/clear", {"open_id": self.openId})
+            self._loadSystemPrompt(db)
