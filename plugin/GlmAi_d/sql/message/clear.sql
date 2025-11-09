@@ -1,0 +1,1 @@
+DELETE * FROM message WHERE open_id = ?;
