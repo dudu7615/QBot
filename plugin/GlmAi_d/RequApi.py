@@ -9,21 +9,10 @@ url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
 async def RequApi(messages: str, openId: str) -> str:
     history = PersonHistory(openId)
-    if history.getHistory():
-        payloda: ApiJson = {
+
+    payloda: ApiJson = {
             "model": "GLM-4-Flash-250414",
             "messages": history.getHistory() + [{"role": "user", "content": messages}],
-            "stream": False,
-            "temperature": 0.7,
-            "top_p": 0.7,
-            "max_tokens": 2048,
-            "do_sample": True,
-            "thinking": {"type": "disabled"},
-        }
-    else:
-        payloda: ApiJson = {
-            "model": "glm-4.5-flash",
-            "messages": [{"role": "user", "content": messages}],
             "stream": False,
             "temperature": 0.7,
             "top_p": 0.7,
