@@ -12,6 +12,9 @@ class Sql:
     def __del__(self):
         self.conn.close()
 
+    def __call__(self, command: str, params: dict[str,str] | tuple[Any,...] | None = None) -> list[tuple[Any,...]]:
+        return self.run(command, params)
+
     def run(self, command: str, params: dict[str,str] | tuple[Any,...] | None = None) -> list[tuple[Any,...]]:
         if params is None:
             params = {}
