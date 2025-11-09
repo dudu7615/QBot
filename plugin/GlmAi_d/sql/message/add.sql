@@ -1,6 +1,6 @@
 -- add a new message
-INSERT INTO messages (open_id, role, text)
-VALUES (:open_id, :role, :text);
+INSERT INTO messages (open_id, role, content)
+VALUES (:open_id, :role, :content);
 
 -- update user's updated_at timestamp
 UPDATE users
