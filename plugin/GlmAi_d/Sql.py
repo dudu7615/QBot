@@ -14,10 +14,10 @@ class Sql:
     async def __call__(
         self, command: str, params: dict[str, str] | tuple[Any, ...] | None = None
     ) -> list[tuple[Any, ...]]:
+        await self.initDb()
         return await self.run(command, params)
 
     async def initDb(self):
-        async with self.lock:
             if not (ROOT / "data").exists():
                 (ROOT / "data").mkdir(parents=True, exist_ok=True)
                 await self.run("init")
