@@ -1,7 +1,7 @@
 # My ignores
-test/request_logs/
 .VSCodeCounter
 logs/
+temp
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
