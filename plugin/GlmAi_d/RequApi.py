@@ -8,22 +8,12 @@ url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
 
 async def RequApi(messages: str, openId: str) -> str:
+    logger.debug(f"RequApi called with openId: {openId}, messages: {messages}")
     history = PersonHistory(openId)
-    if history.getHistory():
-        payloda: ApiJson = {
+
+    payloda: ApiJson = {
             "model": "GLM-4-Flash-250414",
-            "messages": history.getHistory() + [{"role": "user", "content": messages}],
-            "stream": False,
-            "temperature": 0.7,
-            "top_p": 0.7,
-            "max_tokens": 2048,
-            "do_sample": True,
-            "thinking": {"type": "disabled"},
-        }
-    else:
-        payloda: ApiJson = {
-            "model": "glm-4.5-flash",
-            "messages": [{"role": "user", "content": messages}],
+            "messages": await history.getHistory() + [{"role": "user", "content": messages}],
             "stream": False,
             "temperature": 0.7,
             "top_p": 0.7,
@@ -37,7 +27,7 @@ async def RequApi(messages: str, openId: str) -> str:
         # "Content-Type": "application/json",
     }
     logger.info(f"请求Glm openid: {openId}, 请求内容: {messages}")
-    history.addHistory(
+    await history.addHistory(
         ApiJson_Messages(
             role="user",
             content=messages,
@@ -49,7 +39,7 @@ async def RequApi(messages: str, openId: str) -> str:
             response = await client.post(url, headers=headers, json=payloda, timeout=60)
             if response.status_code == 200:
                 aiReply =  response.json()["choices"][0]["message"]["content"]
-                history.addHistory(
+                await history.addHistory(
                     ApiJson_Messages(
                         role="assistant",
                         content=aiReply,
