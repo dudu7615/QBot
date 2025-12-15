@@ -26,12 +26,10 @@ class User(SQLModel, table=True):
             user = session.get(User, openId)
             if user is None:
                 user = User(openId=openId, name=name)
-                session.add(user)
             else:
                 user.name = name
                 user.latestChat = datetime.now()
-                session.add(user)
-
+            session.add(user)
             try:
                 session.commit()
                 session.refresh(user)
@@ -48,8 +46,7 @@ class User(SQLModel, table=True):
     @staticmethod
     def delByOpenId(openId: str) -> None:
         with Session(engine) as session:
-            user = session.get(User, openId)
-            if user:
+            if user := session.get(User, openId):
                 session.delete(user)
                 try:
                     session.commit()
@@ -83,8 +80,7 @@ class Message(SQLModel, table=True):
         with Session(engine) as session:
             msg = Message(openId=openId, content=content, role=role)
             session.add(msg)
-            user = session.get(User, openId)
-            if user:
+            if user := session.get(User, openId):
                 user.latestChat = datetime.now()
                 session.add(user)
 
