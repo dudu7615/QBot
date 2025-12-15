@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Optional, Any
 from datetime import datetime
 from enum import Enum
@@ -10,10 +9,6 @@ from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event
 from plugin.GlmAi_d import Paths
 
 
-ROOT = Path(__file__).parent
-sqlDir = ROOT / "sql"
-
-
 class User(SQLModel, table=True):
     openId: str = Field(primary_key=True, max_length=100)
     name: str = Field(index=True, max_length=50)
@@ -22,7 +17,7 @@ class User(SQLModel, table=True):
 
     @staticmethod
     def addOrUpdate(openId: str, name: str) -> "User":
-        with Session(engine) as session:
+        with Session(_engine) as session:
             user = session.get(User, openId)
             if user is None:
                 user = User(openId=openId, name=name)
@@ -40,12 +35,12 @@ class User(SQLModel, table=True):
 
     @staticmethod
     def getByOpenId(openId: str) -> Optional["User"]:
-        with Session(engine) as session:
+        with Session(_engine) as session:
             return session.get(User, openId)
 
     @staticmethod
     def delByOpenId(openId: str) -> None:
-        with Session(engine) as session:
+        with Session(_engine) as session:
             if user := session.get(User, openId):
                 session.delete(user)
                 try:
@@ -77,7 +72,7 @@ class Message(SQLModel, table=True):
 
     @staticmethod
     def addMessage(openId: str, content: str, role: MessageRole) -> "Message":
-        with Session(engine) as session:
+        with Session(_engine) as session:
             msg = Message(openId=openId, content=content, role=role)
             session.add(msg)
             if user := session.get(User, openId):
@@ -94,7 +89,7 @@ class Message(SQLModel, table=True):
 
     @staticmethod
     def getByOpenId(openId: str) -> list[dict[str, str]]:
-        with Session(engine) as session:
+        with Session(_engine) as session:
             statement = (
                 select(Message)
                 .where(Message.openId == openId)
@@ -106,7 +101,7 @@ class Message(SQLModel, table=True):
 
     @staticmethod
     def delByOpenId(openId: str) -> None:
-        with Session(engine) as session:
+        with Session(_engine) as session:
             statement = select(Message).where(Message.openId == openId)
             results = session.exec(statement)
 
@@ -119,15 +114,15 @@ class Message(SQLModel, table=True):
 
 
 # 连接 SQLite 数据库
-sqlite_file = Paths.DATA / "chat.db"
-sqlite_file.parent.mkdir(parents=True, exist_ok=True)
-sqlite_url = f"sqlite:///{sqlite_file.absolute().as_posix()}"
-engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+_sqlite_file = Paths.DATA / "chat.db"
+_sqlite_file.parent.mkdir(parents=True, exist_ok=True)
+_sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
+_engine = create_engine(_sqlite_url, connect_args={"check_same_thread": False})
 
 
 # 在 SQLite 连接上启用外键约束
-@event.listens_for(engine, "connect")
-def enable_sqlite_foreign_keys(
+@event.listens_for(_engine, "connect")
+def _enable_sqlite_foreign_keys( # type: ignore
     dbapi_connection: sqlite3.Connection, connection_record: Any
 ) -> None:
     try:
@@ -140,7 +135,4 @@ def enable_sqlite_foreign_keys(
 
 
 # 创建表
-SQLModel.metadata.create_all(engine)
-
-
-sql = ...
+SQLModel.metadata.create_all(_engine)
