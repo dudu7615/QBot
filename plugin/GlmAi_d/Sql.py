@@ -14,6 +14,7 @@ class User(SQLModel, table=True):
     name: str = Field(index=True, max_length=50)
     createdAt: datetime = Field(default_factory=datetime.now)
     latestChat: datetime = Field(default_factory=datetime.now)
+    messageCount: int = Field(default=0)
 
     @staticmethod
     def addOrUpdate(openId: str, name: str) -> "User":
@@ -76,8 +77,8 @@ class Message(SQLModel, table=True):
             msg = Message(openId=openId, content=content, role=role)
             session.add(msg)
             if user := session.get(User, openId):
+                user.messageCount = user.messageCount + 1
                 user.latestChat = datetime.now()
-                session.add(user)
 
             try:
                 session.commit()
@@ -100,13 +101,17 @@ class Message(SQLModel, table=True):
             return [{"role": msg.role.value, "content": msg.content} for msg in results]
 
     @staticmethod
-    def delByOpenId(openId: str) -> None:
+    def clearByOpenId(openId: str) -> None:
         with Session(_engine) as session:
             statement = select(Message).where(Message.openId == openId)
             results = session.exec(statement)
 
             for msg in results:
                 session.delete(msg)
+            # set messageCount to 0
+            if user := session.get(User, openId):
+                user.messageCount = 0
+                user.latestChat = datetime.now()
             try:
                 session.commit()
             except Exception:
