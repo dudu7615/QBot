@@ -49,6 +49,12 @@ class User(SQLModel, table=True):
                 except Exception:
                     session.rollback()
 
+    @staticmethod
+    def getmessageCount(openId: str) -> int:
+
+        user = User.getByOpenId(openId)
+        
+        return user.messageCount if user else 0
 
 class MessageRole(str, Enum):
     assistant = "assistant"

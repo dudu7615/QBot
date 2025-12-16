@@ -1,6 +1,6 @@
 from plugin.GlmAi_d import Paths, Types
 from plugin.GlmAi_d.Config import config
-from plugin.GlmAi_d.Sql import sql
+from plugin.GlmAi_d.Sql import *
 
 
 class PersonHistory:
@@ -10,44 +10,26 @@ class PersonHistory:
     async def _loadSystemPrompt(
         self,
     ) -> None:
-        if not await sql("message/get", {"open_id": self.openId}):
+        if User.getmessageCount(self.openId) == 0:
             with open(
                 Paths.PERSONALITY / f"{config['personality']}", "r", encoding="utf-8"
             ) as f:
-                systemPrompt: Types.ApiJson_Messages = {
-                    "role": "system",
-                    "content": f.read(),
-                }
-
-                await sql(
-                    "message/add",
-                    {
-                        "open_id": self.openId,
-                        "role": systemPrompt["role"],
-                        "content": systemPrompt["content"],
-                    },
-                )
+                Message.addMessage(self.openId, f.read(), MessageRole.system)
 
     async def addHistory(self, message: Types.ApiJson_Messages) -> None:
+        Message.addMessage(self.openId, message["content"], MessageRole.user if message["role"] == "user" else MessageRole.assistant)
 
-        await sql(
-            "message/add",
-            {
-                "open_id": self.openId,
-                "role": message["role"],
-                "content": message["content"],
-            },
-        )
 
     async def getHistory(self) -> list[Types.ApiJson_Messages]:
 
         await self._loadSystemPrompt()
+
         return [
             {"role": role, "content": content}
-            for role, content in await sql("message/get", {"open_id": self.openId})
+            for role, content in Message.getByOpenId(self.openId)
         ]
 
     async def clearHistory(self) -> None:
 
-        await sql("message/clear", {"open_id": self.openId})
+        Message.clearByOpenId(self.openId)
         await self._loadSystemPrompt()
