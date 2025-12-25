@@ -7,7 +7,7 @@ class PersonHistory:
     def __init__(self, openId: str):
         self.openId = openId
 
-    async def _loadSystemPrompt(
+    def _loadSystemPrompt(
         self,
     ) -> None:
         if User.getmessageCount(self.openId) == 0:
@@ -16,20 +16,19 @@ class PersonHistory:
             ) as f:
                 Message.addMessage(self.openId, f.read(), MessageRole.system)
 
-    async def addHistory(self, message: Types.ApiJson_Messages) -> None:
+    def addHistory(self, message: Types.ApiJson_Messages) -> None:
         Message.addMessage(self.openId, message["content"], MessageRole.user if message["role"] == "user" else MessageRole.assistant)
 
 
-    async def getHistory(self) -> list[Types.ApiJson_Messages]:
-
-        await self._loadSystemPrompt()
+    def getHistory(self) -> list[Types.ApiJson_Messages]:
+        self._loadSystemPrompt()
 
         return [
             {"role": role, "content": content}
             for role, content in Message.getByOpenId(self.openId)
         ]
 
-    async def clearHistory(self) -> None:
+    def clearHistory(self) -> None:
 
         Message.clearByOpenId(self.openId)
-        await self._loadSystemPrompt()
+        self._loadSystemPrompt()
