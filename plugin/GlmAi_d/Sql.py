@@ -67,7 +67,7 @@ class Message(SQLModel, table=True):
     openId: str = Field(
         sa_column=Column(String, ForeignKey("user.openId", ondelete="CASCADE"))
     )
-    content: str = Field()
+    content: str = Field(max_length=100000)
     createdAt: datetime = Field(default_factory=datetime.now)
     role: MessageRole = Field(
         sa_column=Column(
@@ -82,7 +82,9 @@ class Message(SQLModel, table=True):
         with Session(_engine) as session:
             msg = Message(openId=openId, content=content, role=role)
             session.add(msg)
-            if user := session.get(User, openId):
+            if not ( user := session.get(User, openId)):
+                User.addOrUpdate(openId, "Unknown")
+            else:
                 user.messageCount = user.messageCount + 1
                 user.latestChat = datetime.now()
 
