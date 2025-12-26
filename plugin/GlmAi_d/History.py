@@ -6,6 +6,10 @@ from plugin.GlmAi_d.Sql import *
 class PersonHistory:
     def __init__(self, openId: str):
         self.openId = openId
+        self._addUserIfNotExist()
+
+    def _addUserIfNotExist(self) -> None:
+        User.addOrUpdate(self.openId, "unknown")
 
     def _loadSystemPrompt(
         self,
