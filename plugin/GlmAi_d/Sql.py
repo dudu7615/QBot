@@ -106,7 +106,7 @@ class Message(SQLModel, table=True):
             )
 
             results = session.exec(statement)
-            return [{"role": msg.role.value, "content": msg.content} for msg in results]
+            return [{"role": msg, "content": msg.content} for msg in results]  # type: ignore
 
     @staticmethod
     def clearByOpenId(openId: str) -> None:
