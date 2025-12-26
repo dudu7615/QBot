@@ -13,7 +13,7 @@ async def RequApi(messages: str, openId: str) -> str:
 
     payloda: ApiJson = {
             "model": "GLM-4-Flash-250414",
-            "messages": await history.getHistory() + [{"role": "user", "content": messages}],
+            "messages": history.getHistory() + [{"role": "user", "content": messages}],
             "stream": False,
             "temperature": 0.7,
             "top_p": 0.7,
@@ -27,7 +27,7 @@ async def RequApi(messages: str, openId: str) -> str:
         # "Content-Type": "application/json",
     }
     logger.info(f"请求Glm openid: {openId}, 请求内容: {messages}")
-    await history.addHistory(
+    history.addHistory(
         ApiJson_Messages(
             role="user",
             content=messages,
@@ -39,7 +39,7 @@ async def RequApi(messages: str, openId: str) -> str:
             response = await client.post(url, headers=headers, json=payloda, timeout=60)
             if response.status_code == 200:
                 aiReply =  response.json()["choices"][0]["message"]["content"]
-                await history.addHistory(
+                history.addHistory(
                     ApiJson_Messages(
                         role="assistant",
                         content=aiReply,
