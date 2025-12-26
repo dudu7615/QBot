@@ -133,18 +133,15 @@ _sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
 _engine = create_engine(_sqlite_url, connect_args={"check_same_thread": False})
 
 
-# 在 SQLite 连接上启用外键约束
 @event.listens_for(_engine, "connect")
-def _enable_sqlite_foreign_keys( # type: ignore
-    dbapi_connection: sqlite3.Connection, connection_record: Any
-) -> None:
-    try:
-        dbapi_connection.execute("PRAGMA foreign_keys=ON")
-    except Exception:
-        # fallback for pysqlite which may require a cursor
-        cur = dbapi_connection.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
+def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):  # type: ignore
+    cursor = dbapi_connection.cursor()
+    # 必开4个核心配置（外键+WAL+最高安全+自动校验）
+    cursor.execute("PRAGMA foreign_keys = ON")    # 外键检查
+    cursor.execute("PRAGMA journal_mode = WAL")   # 断电安全
+    cursor.execute("PRAGMA synchronous = FULL")   # 写盘安全
+    cursor.execute("PRAGMA cache_size = -20000")  # 20MB缓存提速
+    cursor.close()
 
 
 # 创建表
