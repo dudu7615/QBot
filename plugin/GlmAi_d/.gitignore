@@ -1,2 +1,2 @@
 data/history
-data/chat.db
+data/*.db*
