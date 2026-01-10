@@ -9,7 +9,8 @@ class PersonHistory:
         self._addUserIfNotExist()
 
     def _addUserIfNotExist(self) -> None:
-        User.addOrUpdate(self.openId, "unknown")
+        if not User.getByOpenId(self.openId):
+            User.addOrUpdate(self.openId, "unknown")
 
     def _loadSystemPrompt(
         self,
