@@ -1,0 +1,1 @@
+DELETE * FROM users WHERE open_id = ?;

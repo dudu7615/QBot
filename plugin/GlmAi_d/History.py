@@ -1,42 +1,39 @@
 from plugin.GlmAi_d import Paths, Types
 from plugin.GlmAi_d.Config import config
-import yaml
+from plugin.GlmAi_d.Sql import *
+
 
 class PersonHistory:
     def __init__(self, openId: str):
         self.openId = openId
-        self.path = Paths.HISTORY / f"{self.openId}.yaml"
-        
-        if not self.path.exists():
-            self.history = []
-            with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
-                yaml.dump(self.history, f, allow_unicode=True)
-        else:
-            with open(Paths.HISTORY / f"{self.openId}.yaml", "r+", encoding="utf-8") as f:
-                self.history: list[Types.ApiJson_Messages] = yaml.load(f, Loader=yaml.FullLoader)
+        self._addUserIfNotExist()
 
-        if not self.history:
-            self.history = []
-            self.loadSystemPrompt()
+    def _addUserIfNotExist(self) -> None:
+        if not User.getByOpenId(self.openId):
+            User.addOrUpdate(self.openId, "unknown")
 
-    def loadSystemPrompt(self) -> None:
-        with open(Paths.PERSONALITY / f"{config['personality']}", "r", encoding="utf-8") as f:
-            systemPrompt: Types.ApiJson_Messages = {
-                "role": "system",
-                "content": f.read()
-            }
-            self.history.insert(0, systemPrompt)
+    def _loadSystemPrompt(
+        self,
+    ) -> None:
+        if User.getmessageCount(self.openId) == 0:
+            with open(
+                Paths.PERSONALITY / f"{config['personality']}", "r", encoding="utf-8"
+            ) as f:
+                Message.addMessage(self.openId, f.read(), MessageRole.system)
 
     def addHistory(self, message: Types.ApiJson_Messages) -> None:
-        self.history.append(message)
-        with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
-            yaml.dump(self.history, f, allow_unicode=True)
+        Message.addMessage(self.openId, message["content"], MessageRole(message["role"]))
+
 
     def getHistory(self) -> list[Types.ApiJson_Messages]:
-        return self.history
-    
+        self._loadSystemPrompt()
+
+        return [
+            {"role": msg.role, "content": msg.content}
+            for msg in Message.getByOpenId(self.openId)
+        ]
+
     def clearHistory(self) -> None:
-        self.history = []
-        self.loadSystemPrompt()
-        with open(Paths.HISTORY / f"{self.openId}.yaml", "w+", encoding="utf-8") as f:
-            yaml.dump(self.history, f, allow_unicode=True, Dumper=yaml.Dumper)
+
+        Message.clearByOpenId(self.openId)
+        self._loadSystemPrompt()
