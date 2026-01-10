@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import hashlib
 import json
 import os
 
@@ -9,9 +10,9 @@ app = FastAPI(title="QQ机器人回调验证服务", version="1.0")
 
 # QQ机器人AppSecret - 请在此处设置您的密钥
 # 获取位置：QQ机器人管理后台 → 开发 → 开发设置 → AppSecret
-BOT_SECRET = ""  # 请将此值替换为您的实际AppSecret
+BOT_SECRET = "Tfr3FRer4HUhu8Mao2GUjyDShwBRhxDT"  # 请将此值替换为您的实际AppSecret
 
-@app.post("/callback")
+@app.post("/")
 async def qqbot_verification(request: Request):
     """
     QQ机器人回调验证接口
@@ -71,31 +72,21 @@ def generate_ed25519_signature(event_ts: str, plain_token: str, secret: str) -> 
     生成QQ机器人验证所需的Ed25519签名
     """
     try:
-        # 确保secret长度为32位（Ed25519要求）
-        while len(secret) < 32:
-            secret += secret
-        secret = secret[:32]
         
-        # 创建私钥并生成签名
-        private_key = Ed25519PrivateKey.from_private_bytes(secret.encode('utf-8'))
+        seed = BOT_SECRET
+        while len(seed) < 32:
+            seed+= BOT_SECRET[2:]
+        print(f"生成的种子: {seed}")
+        # 使用派生的种子创建私钥并生成签名
+        private_key = Ed25519PrivateKey.from_private_bytes(seed.encode('utf-8')[:32])
         message = f"{event_ts}{plain_token}".encode('utf-8')
         signature_bytes = private_key.sign(message)
-        
+
         # 返回十六进制编码的签名
         return signature_bytes.hex()
         
     except Exception as e:
         raise ValueError(f"签名生成失败: {str(e)}")
-
-@app.get("/health")
-async def health_check():
-    """健康检查接口"""
-    status = "healthy" if BOT_SECRET else "unconfigured"
-    return {
-        "status": status,
-        "service": "qqbot-verification",
-        "configured": bool(BOT_SECRET)
-    }
 
 if __name__ == "__main__":
     import uvicorn

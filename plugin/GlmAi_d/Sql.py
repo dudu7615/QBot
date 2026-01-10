@@ -97,7 +97,7 @@ class Message(SQLModel, table=True):
             return msg
 
     @staticmethod
-    def getByOpenId(openId: str) -> list[dict[str, str]]:
+    def getByOpenId(openId: str) -> list['Message']:
         with Session(_engine) as session:
             statement = (
                 select(Message)
@@ -106,7 +106,7 @@ class Message(SQLModel, table=True):
             )
 
             results = session.exec(statement)
-            return [{"role": msg, "content": msg.content} for msg in results]  # type: ignore
+            return list(results)
 
     @staticmethod
     def clearByOpenId(openId: str) -> None:

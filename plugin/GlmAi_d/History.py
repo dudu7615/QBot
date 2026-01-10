@@ -21,15 +21,15 @@ class PersonHistory:
                 Message.addMessage(self.openId, f.read(), MessageRole.system)
 
     def addHistory(self, message: Types.ApiJson_Messages) -> None:
-        Message.addMessage(self.openId, message["content"], MessageRole.user if message["role"] == "user" else MessageRole.assistant)
+        Message.addMessage(self.openId, message["content"], MessageRole(message["role"]))
 
 
     def getHistory(self) -> list[Types.ApiJson_Messages]:
         self._loadSystemPrompt()
 
         return [
-            {"role": role, "content": content}
-            for role, content in Message.getByOpenId(self.openId)
+            {"role": msg.role, "content": msg.content}
+            for msg in Message.getByOpenId(self.openId)
         ]
 
     def clearHistory(self) -> None:
