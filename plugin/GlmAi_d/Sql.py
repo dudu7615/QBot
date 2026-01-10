@@ -2,9 +2,8 @@ from typing import Optional, Any
 from datetime import datetime
 from enum import Enum
 import sqlite3
-from sqlmodel import SQLModel, Field, create_engine, Session, select, Relationship  # type: ignore
+from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
 from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event
-
 
 from plugin.GlmAi_d import Paths
 
@@ -31,7 +30,6 @@ class User(SQLModel, table=True):
                 session.refresh(user)
             except Exception:
                 session.rollback()
-
             return user
 
     @staticmethod
@@ -51,10 +49,9 @@ class User(SQLModel, table=True):
 
     @staticmethod
     def getmessageCount(openId: str) -> int:
-
         user = User.getByOpenId(openId)
-        
         return user.messageCount if user else 0
+
 
 class MessageRole(str, Enum):
     assistant = "assistant"
@@ -80,20 +77,19 @@ class Message(SQLModel, table=True):
     @staticmethod
     def addMessage(openId: str, content: str, role: MessageRole) -> "Message":
         with Session(_engine) as session:
-            msg = Message(openId=openId, content=content, role=role)
-            session.add(msg)
-            if not ( user := session.get(User, openId)):
+            if not (user := session.get(User, openId)):
                 User.addOrUpdate(openId, "Unknown")
             else:
-                user.messageCount = user.messageCount + 1
+                user.messageCount += 1
                 user.latestChat = datetime.now()
-
+            msg = Message(openId=openId, content=content, role=role)
+            session.add(msg)
+            
             try:
                 session.commit()
                 session.refresh(msg)
             except Exception:
                 session.rollback()
-
             return msg
 
     @staticmethod
@@ -104,19 +100,16 @@ class Message(SQLModel, table=True):
                 .where(Message.openId == openId)
                 .order_by(text("createdAt ASC"))
             )
-
             results = session.exec(statement)
             return list(results)
 
     @staticmethod
     def clearByOpenId(openId: str) -> None:
         with Session(_engine) as session:
-            statement = select(Message).where(Message.openId == openId)
-            results = session.exec(statement)
+            # 极简批量删除（保留核心优化，减少锁持有时间）
+            statement = delete(Message).where(Message.openId == openId) # type: ignore
+            session.exec(statement)
 
-            for msg in results:
-                session.delete(msg)
-            # set messageCount to 0
             if user := session.get(User, openId):
                 user.messageCount = 0
                 user.latestChat = datetime.now()
@@ -130,17 +123,20 @@ class Message(SQLModel, table=True):
 _sqlite_file = Paths.DATA / "chat.db"
 _sqlite_file.parent.mkdir(parents=True, exist_ok=True)
 _sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
-_engine = create_engine(_sqlite_url, connect_args={"check_same_thread": False})
+_engine = create_engine(
+    _sqlite_url,
+    connect_args={"check_same_thread": False},
+    isolation_level="SERIALIZABLE"  # SQLite支持的隔离级别，提供最高的事务隔离
+)
 
 
 @event.listens_for(_engine, "connect")
 def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):  # type: ignore
     cursor = dbapi_connection.cursor()
-    # 必开4个核心配置（外键+WAL+最高安全+自动校验）
-    cursor.execute("PRAGMA foreign_keys = ON")    # 外键检查
-    cursor.execute("PRAGMA journal_mode = WAL")   # 断电安全
-    cursor.execute("PRAGMA synchronous = FULL")   # 写盘安全
-    cursor.execute("PRAGMA cache_size = -20000")  # 20MB缓存提速
+    # 仅保留【必选核心配置】，剔除冗余调试和进阶配置，简洁高效
+    cursor.execute("PRAGMA foreign_keys = ON")    # 外键检查（保障数据完整性）
+    cursor.execute("PRAGMA journal_mode = WAL")   # 多进程并发核心（1写+多读）
+    cursor.execute("PRAGMA busy_timeout = 5000")  # 锁定等待5秒（自动化解简单冲突，无需手动重试）
     cursor.close()
 
 
