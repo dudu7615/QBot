@@ -42,7 +42,7 @@ async def sendText2Person(
         else:
             logger.warning(f"{resq_.status_code} - {resq_.text}")
     else:
-        logger.error(f"发送消息失败: {resq}")
+        logger.error(f"发送消息失败: {resq_.status_code} - {resq_.text}")
         return
 
     logger.info(f"发送消息成功: {resq.json()}")
