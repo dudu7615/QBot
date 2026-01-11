@@ -3,6 +3,7 @@ from .TestPlugin import TestPlugin
 from .TestAutoReply import TestAutoReply
 from .GlmAi import GlmAi
 from .Weather import Weather
+from .Holiday import Holiday
 
 __all__ = [
     "PluginBase",
@@ -13,4 +14,5 @@ __all__ = [
     "TestAutoReply",
     "GlmAi",
     "Weather",
+    "Holiday"
 ]
