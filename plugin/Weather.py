@@ -33,8 +33,8 @@ class Weather(PluginBase):
                         weather = await GetWeather.getTodayWeather(city)
                     else:
                         weather = "请先设置常住地"
-                logger.info(f"发送天气信息: {weather}")
-                await HttpSender.sendText2Person(weather, message, author["id"])
+            logger.info(f"发送天气信息: {weather}")
+            await HttpSender.sendText2Person(weather, message, author["id"])
         
         elif content.startswith("/天气预报"):
             if len(content.split(" ")) != 2:
