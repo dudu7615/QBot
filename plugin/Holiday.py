@@ -11,9 +11,8 @@ class Holiday(PluginBase):
     usable = True
     messageStartWith = "/最近假期"
 
-    def __init__(self):
-        super().__init__()
-        RequApi.checkAndUpdata()
+    _checked = False
+
 
     @property
     def messageType(self) -> MessageType.Group | MessageType.Person:
@@ -24,6 +23,9 @@ class Holiday(PluginBase):
         return "Holiday"
 
     async def run(self, message: MessageData):
+        if not self._checked:
+            RequApi.checkAndUpdata()
+            self._checked = True
         content = message["d"]["content"]
         author = message["d"]["author"]
         
