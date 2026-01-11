@@ -3,12 +3,14 @@ from datetime import datetime
 from enum import Enum
 import sqlite3
 from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
-from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event
+from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event, MetaData  
 
 from plugin.GlmAi_d import Paths
 
 
 class User(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
+    
     openId: str = Field(primary_key=True, max_length=100)
     name: str = Field(index=True, max_length=50)
     createdAt: datetime = Field(default_factory=datetime.now)
