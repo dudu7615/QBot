@@ -23,7 +23,7 @@ class Cache(_Model, table=True):
     @staticmethod
     def addCache(name: str, date: datetime, isHoliday: bool) -> None:
         with Session(_engine) as session:
-            session.add(Cache(name=name, date=date, isHoliday=isHoliday))
+            session.add(Cache(name=name, date=datetime(date.year, date.month, date.day), isHoliday=isHoliday))
             session.commit()
 
     @staticmethod
