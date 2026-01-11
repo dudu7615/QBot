@@ -1,0 +1,10 @@
+### 城市搜索
+GET https://api.seniverse.com/v3/location/search.json?key=S7Nif7zaQHD-fPrwJ&q=兰州
+
+
+### 当前天气
+GET https://api.seniverse.com/v3/weather/now.json?key=S7Nif7zaQHD-fPrwJ&location=兰州&language=zh-Hans&unit=c
+
+
+### 未来3日
+GET https://api.seniverse.com/v3/weather/daily.json?key=S7Nif7zaQHD-fPrwJ&location=兰州&language=zh-Hans&unit=c&start=0&days=4
