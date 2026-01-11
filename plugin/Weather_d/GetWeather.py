@@ -15,7 +15,7 @@ _lastCheck = datetime.now()
 async def getTodayWeather(cityName: str) -> str:
     global _lastCheck
 
-    cache = Cache.getByPath(cityName)
+    cache = Cache.getByPath(cityName, WeatherType.today)
     if cache:
         return cache.detal
 
@@ -37,7 +37,8 @@ async def getTodayWeather(cityName: str) -> str:
                                         params=pramas, timeout=5)
             if response.status_code == 200:
                 resp = response.json()
-                detal = (f"城市: {resp['results'][0]['location']['path']}\n"
+                cityPath = resp['results'][0]['location']['path']
+                detal = (f"城市: {cityPath}\n"
                          f"天气: {resp['results'][0]['now']['text']} {resp['results'][0]['now']['temperature']}℃\n")
                 Cache.addCache(cityName, detal, WeatherType.today)
                 return detal
@@ -46,3 +47,52 @@ async def getTodayWeather(cityName: str) -> str:
             await asyncio.sleep(1)
     logger.error(f"获取天气信息失败: {cityName}")
     return "获取天气信息失败"
+
+async def getFutureWeather(cityName: str) -> str:
+    global _lastCheck
+
+    cache = Cache.getByPath(cityName, WeatherType.future)
+    if cache:
+        return cache.detal
+
+    for _ in range(3):
+        try:
+            pramas = {
+                "key": key,
+                "location": cityName,
+                "language": "zh-Hans",
+                "unit": "c",
+                "start": "0",
+                "days": "4"
+            }
+
+            # 防止请求过快
+            while datetime.now() - _lastCheck < timedelta(seconds=1.05):
+                await asyncio.sleep(1)
+            _lastCheck = datetime.now()
+
+            response = await client.get(f"https://api.seniverse.com/v3/weather/daily.json",
+                                        params=pramas, timeout=5)
+            if response.status_code == 200:
+                detal = ""
+                resp = response.json()
+                cityPath = resp['results'][0]['location']['path']
+                detal += f"城市: {cityPath}\n"
+                for day in resp['results'][0]["daily"]:
+                    detal+=(f"{day["date"]}: \n"
+                            f"{day["text_day"]} {day["low"]}~{day["high"]}℃\n"
+                            f"{day["wind_direction"]}, {day["wind_speed"]}m/s, {day["wind_scale"]}极\n"
+                            f"降雨: {day["rainfall"]}\n"
+                            "\n"
+                            )
+                Cache.addCache(cityName, detal, WeatherType.future)
+                return detal
+        except Exception as e:
+            logger.warning(f"尝试获取天气预报失败: {e}")
+            await asyncio.sleep(1)
+    logger.error(f"获取天气信息失败: {cityName}")
+    return "获取天气信息失败"
+
+        
+
+                
