@@ -7,11 +7,18 @@ from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # 
 from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event, MetaData
 
 
+# 创建独立的metadata
+_sqlMetadata = MetaData()
+
+# 创建独立的SQLModel基类
+class _Model(SQLModel):
+    metadata = _sqlMetadata
+
 class WeatherType(str, Enum):
     today = "today"
     future = "future"
 
-class Cache(SQLModel, table=True):
+class Cache(_Model, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     weatherType: WeatherType = Field(
@@ -32,9 +39,14 @@ class Cache(SQLModel, table=True):
             session.commit()
 
     @staticmethod
-    def getByPath(path: str) -> Optional["Cache"]:
+    def getByPath(path: str, weaterType: WeatherType) -> Optional["Cache"]:
         with Session(_engine) as session:
-            statement = select(Cache).where(Cache.name == path).order_by(text("createdAt DESC"))
+            statement = (
+                select(Cache)
+                .where(Cache.name == path)
+                .where(Cache.weatherType == weaterType)
+                .order_by(text("createdAt DESC"))
+                )
             cache = session.exec(statement).first()
             if cache and cache.createdAt > datetime.now() - timedelta(hours=1):
                 return cache
@@ -42,9 +54,7 @@ class Cache(SQLModel, table=True):
                 return None
             
 
-class User(SQLModel, table=True):
-    __table_args__ = {"extend_existing": True}
-    
+class User(_Model, table=True):
     openId: str = Field(primary_key=True)
     name: Optional[str] = Field(default=None)
     location: str
@@ -87,4 +97,4 @@ def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):
     cursor.execute("PRAGMA busy_timeout = 5000")  # 锁定等待5秒（自动化解简单冲突，无需手动重试）
     cursor.close()
 
-SQLModel.metadata.create_all(_engine)
+_sqlMetadata.create_all(_engine)
