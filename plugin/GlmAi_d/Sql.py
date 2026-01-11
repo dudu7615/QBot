@@ -3,12 +3,21 @@ from datetime import datetime
 from enum import Enum
 import sqlite3
 from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
-from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event
+from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event, MetaData  
 
 from plugin.GlmAi_d import Paths
 
+# 创建独立的metadata
+_sqlMetadata = MetaData()
 
-class User(SQLModel, table=True):
+# 创建独立的SQLModel基类
+class _Model(SQLModel):
+    metadata = _sqlMetadata
+
+
+class User(_Model, table=True):
+
+    
     openId: str = Field(primary_key=True, max_length=100)
     name: str = Field(index=True, max_length=50)
     createdAt: datetime = Field(default_factory=datetime.now)
@@ -59,7 +68,7 @@ class MessageRole(str, Enum):
     system = "system"
 
 
-class Message(SQLModel, table=True):
+class Message(_Model, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     openId: str = Field(
         sa_column=Column(String, ForeignKey("user.openId", ondelete="CASCADE"))
@@ -141,4 +150,4 @@ def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):
 
 
 # 创建表
-SQLModel.metadata.create_all(_engine)
+_sqlMetadata.create_all(_engine)
