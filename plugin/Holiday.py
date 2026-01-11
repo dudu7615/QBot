@@ -26,7 +26,7 @@ class Holiday(PluginBase):
         if not self._checked:
             RequApi.checkAndUpdata()
             self._checked = True
-        content = message["d"]["content"]
+        
         author = message["d"]["author"]
         
         nextHoliday =  Cache.getNextHoliday(datetime.now())
