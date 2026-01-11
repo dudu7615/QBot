@@ -1,14 +1,13 @@
 from plugin.Holiday_d.SqlCache import Cache
 from modules.HttpSender import httpx
 from modules.Logger import logger
-from typing import Optional
 from datetime import datetime
 
 def updataCache():
     url = "https://timor.tech/api/holiday/year"
     for _ in range(3):
         try:
-            resp = httpx.get(url)
+            resp = httpx.get(url, timeout=10)
             if resp.status_code == 200:
                 reply = resp.json()
                 if reply["code"] == 0:
