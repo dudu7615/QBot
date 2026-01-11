@@ -39,12 +39,12 @@ class Cache(_Model, table=True):
             session.commit()
 
     @staticmethod
-    def getByPath(path: str, weaterType: WeatherType) -> Optional["Cache"]:
+    def getByPath(path: str, weatherType: WeatherType) -> Optional["Cache"]:
         with Session(_engine) as session:
             statement = (
                 select(Cache)
                 .where(Cache.name == path)
-                .where(Cache.weatherType == weaterType)
+                .where(Cache.weatherType == weatherType)
                 .order_by(text("createdAt DESC"))
                 )
             cache = session.exec(statement).first()
