@@ -23,7 +23,7 @@ class PluginMeta(ABCMeta):
 
 
 class PluginBase(ABC, metaclass=PluginMeta):
-    messageStartWith = ""  # only use for plugins that reply message startwith /
+    messageStartWith: str | list[str] = ""  # only use for plugins that reply message startwith /
     usable = False
 
     @property
