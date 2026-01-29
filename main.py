@@ -24,25 +24,29 @@ class MainServer:
         if len(self.managedMessage) > 1000:
             self.managedMessage = self.managedMessage[-500:]
         logger.info(f"Received message - {message['d']['content']}")
-        
+
         # 统一处理插件调用逻辑
         for plugin in self.plugins:
             if message_type == plugin.messageType.value:
                 # 对于命令型消息（以/开头）匹配特定前缀
                 if content.startswith("/"):
-                    if (isinstance(plugin.messageStartWith, str) and 
-                        plugin.messageStartWith == content.split(" ")[0]):
+                    if (
+                        isinstance(plugin.messageStartWith, str)
+                        and plugin.messageStartWith == content.split(" ")[0]
+                    ):
 
                         logger.info(f"call special plugin: {plugin.pluginName}")
                         await plugin.run(message)
                         break
-                    elif (isinstance(plugin.messageStartWith, list) and
-                        content.split(" ")[0] in plugin.messageStartWith):
-                        
+                    elif (
+                        isinstance(plugin.messageStartWith, list)
+                        and content.split(" ")[0] in plugin.messageStartWith
+                    ):
+
                         logger.info(f"call special plugin: {plugin.pluginName}")
                         await plugin.run(message)
                         break
-                    
+
                 # 对于普通消息，匹配空前缀的插件
                 elif not content.startswith("/") and plugin.messageStartWith == "":
                     logger.info(f"call plugin: {plugin.pluginName}")

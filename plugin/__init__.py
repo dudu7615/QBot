@@ -14,5 +14,5 @@ __all__ = [
     "TestAutoReply",
     "GlmAi",
     "Weather",
-    "Holiday"
+    "Holiday",
 ]

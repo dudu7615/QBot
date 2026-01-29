@@ -26,7 +26,10 @@ async def sendText2Person(
             return
         token = token_
 
-    headers = {"Authorization": f"QQBot {token.access_token}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"QQBot {token.access_token}",
+        "Content-Type": "application/json",
+    }
     data: dict[str, Union[str, int]] = {
         "content": message,
         "msg_type": 0,

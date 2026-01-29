@@ -12,15 +12,15 @@ async def RequApi(messages: str, openId: str) -> str:
     history = PersonHistory(openId)
 
     payloda: ApiJson = {
-            "model": "GLM-4-Flash-250414",
-            "messages": history.getHistory() + [{"role": "user", "content": messages}],
-            "stream": False,
-            "temperature": 0.7,
-            "top_p": 0.7,
-            "max_tokens": 2048,
-            "do_sample": True,
-            "thinking": {"type": "disabled"},
-        }
+        "model": "GLM-4-Flash-250414",
+        "messages": history.getHistory() + [{"role": "user", "content": messages}],
+        "stream": False,
+        "temperature": 0.7,
+        "top_p": 0.7,
+        "max_tokens": 2048,
+        "do_sample": True,
+        "thinking": {"type": "disabled"},
+    }
 
     headers = {
         "Authorization": f"Bearer {config['apiKey']}",
@@ -38,7 +38,7 @@ async def RequApi(messages: str, openId: str) -> str:
         try:
             response = await client.post(url, headers=headers, json=payloda, timeout=60)
             if response.status_code == 200:
-                aiReply =  response.json()["choices"][0]["message"]["content"]
+                aiReply = response.json()["choices"][0]["message"]["content"]
                 history.addHistory(
                     ApiJson_Messages(
                         role="assistant",
@@ -47,7 +47,7 @@ async def RequApi(messages: str, openId: str) -> str:
                 )
                 logger.info(f"Glm: openid: {openId}, 回复内容: {aiReply}")
                 return aiReply
-                
+
         except Exception as e:
             logger.error(f"Glm 接口请求异常: {e}")
 
