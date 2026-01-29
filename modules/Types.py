@@ -7,6 +7,7 @@ class MessageData_d_Author(TypedDict):
     user_openid: str
     union_openid: str
 
+
 class MessageData_d(TypedDict):
     id: str
     content: str
@@ -14,10 +15,12 @@ class MessageData_d(TypedDict):
     author: MessageData_d_Author
     message_type: int
 
+
 class MessageData(TypedDict):
     id: str
     d: MessageData_d
-    t: str # 事件类型
+    t: str  # 事件类型
+
 
 class MessageType:
     class Person(Enum):

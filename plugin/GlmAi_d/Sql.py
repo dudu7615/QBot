@@ -3,12 +3,21 @@ from datetime import datetime
 from enum import Enum
 import sqlite3
 from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
-from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event, MetaData  
+from sqlalchemy import (
+    Column,
+    String,
+    CheckConstraint,
+    text,
+    ForeignKey,
+    event,
+    MetaData,
+)
 
 from plugin.GlmAi_d import Paths
 
 # 创建独立的metadata
 _sqlMetadata = MetaData()
+
 
 # 创建独立的SQLModel基类
 class _Model(SQLModel):
@@ -17,7 +26,6 @@ class _Model(SQLModel):
 
 class User(_Model, table=True):
 
-    
     openId: str = Field(primary_key=True, max_length=100)
     name: str = Field(index=True, max_length=50)
     createdAt: datetime = Field(default_factory=datetime.now)
@@ -93,7 +101,7 @@ class Message(_Model, table=True):
                 user.latestChat = datetime.now()
             msg = Message(openId=openId, content=content, role=role)
             session.add(msg)
-            
+
             try:
                 session.commit()
                 session.refresh(msg)
@@ -102,7 +110,7 @@ class Message(_Model, table=True):
             return msg
 
     @staticmethod
-    def getByOpenId(openId: str) -> list['Message']:
+    def getByOpenId(openId: str) -> list["Message"]:
         with Session(_engine) as session:
             statement = (
                 select(Message)
@@ -116,7 +124,7 @@ class Message(_Model, table=True):
     def clearByOpenId(openId: str) -> None:
         with Session(_engine) as session:
             # 极简批量删除（保留核心优化，减少锁持有时间）
-            statement = delete(Message).where(Message.openId == openId) # type: ignore
+            statement = delete(Message).where(Message.openId == openId)  # type: ignore
             session.exec(statement)
 
             if user := session.get(User, openId):
@@ -135,7 +143,7 @@ _sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
 _engine = create_engine(
     _sqlite_url,
     connect_args={"check_same_thread": False},
-    isolation_level="SERIALIZABLE"  # SQLite支持的隔离级别，提供最高的事务隔离
+    isolation_level="SERIALIZABLE",  # SQLite支持的隔离级别，提供最高的事务隔离
 )
 
 
@@ -143,9 +151,11 @@ _engine = create_engine(
 def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):  # type: ignore
     cursor = dbapi_connection.cursor()
     # 仅保留【必选核心配置】，剔除冗余调试和进阶配置，简洁高效
-    cursor.execute("PRAGMA foreign_keys = ON")    # 外键检查（保障数据完整性）
-    cursor.execute("PRAGMA journal_mode = WAL")   # 多进程并发核心（1写+多读）
-    cursor.execute("PRAGMA busy_timeout = 5000")  # 锁定等待5秒（自动化解简单冲突，无需手动重试）
+    cursor.execute("PRAGMA foreign_keys = ON")  # 外键检查（保障数据完整性）
+    cursor.execute("PRAGMA journal_mode = WAL")  # 多进程并发核心（1写+多读）
+    cursor.execute(
+        "PRAGMA busy_timeout = 5000"
+    )  # 锁定等待5秒（自动化解简单冲突，无需手动重试）
     cursor.close()
 
 

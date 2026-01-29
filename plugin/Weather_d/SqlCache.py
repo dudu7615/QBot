@@ -6,17 +6,19 @@ import sqlite3
 from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
 from sqlalchemy import Column, String, CheckConstraint, text, event, MetaData
 
-
 # 创建独立的metadata
 _sqlMetadata = MetaData()
+
 
 # 创建独立的SQLModel基类
 class _Model(SQLModel):
     metadata = _sqlMetadata
 
+
 class WeatherType(str, Enum):
     today = "today"
     future = "future"
+
 
 class Cache(_Model, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -46,13 +48,13 @@ class Cache(_Model, table=True):
                 .where(Cache.name == path)
                 .where(Cache.weatherType == weatherType)
                 .order_by(text("createdAt DESC"))
-                )
+            )
             cache = session.exec(statement).first()
             if cache and cache.createdAt > datetime.now() - timedelta(hours=1):
                 return cache
             else:
                 return None
-            
+
 
 class User(_Model, table=True):
     openId: str = Field(primary_key=True)
@@ -76,6 +78,7 @@ class User(_Model, table=True):
             else:
                 return None
 
+
 # 连接 SQLite 数据库
 (Path(__file__).parent / "data").mkdir(parents=True, exist_ok=True)
 _sqlite_file = Path(__file__).parent / "data" / "cache.db"
@@ -84,7 +87,7 @@ _sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
 _engine = create_engine(
     _sqlite_url,
     connect_args={"check_same_thread": False},
-    isolation_level="SERIALIZABLE"  # SQLite支持的隔离级别，提供最高的事务隔离
+    isolation_level="SERIALIZABLE",  # SQLite支持的隔离级别，提供最高的事务隔离
 )
 
 
@@ -92,9 +95,12 @@ _engine = create_engine(
 def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):  # type: ignore
     cursor = dbapi_connection.cursor()
     # 仅保留【必选核心配置】，剔除冗余调试和进阶配置，简洁高效
-    cursor.execute("PRAGMA foreign_keys = ON")    # 外键检查（保障数据完整性）
-    cursor.execute("PRAGMA journal_mode = WAL")   # 多进程并发核心（1写+多读）
-    cursor.execute("PRAGMA busy_timeout = 5000")  # 锁定等待5秒（自动化解简单冲突，无需手动重试）
+    cursor.execute("PRAGMA foreign_keys = ON")  # 外键检查（保障数据完整性）
+    cursor.execute("PRAGMA journal_mode = WAL")  # 多进程并发核心（1写+多读）
+    cursor.execute(
+        "PRAGMA busy_timeout = 5000"
+    )  # 锁定等待5秒（自动化解简单冲突，无需手动重试）
     cursor.close()
+
 
 _sqlMetadata.create_all(_engine)

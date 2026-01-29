@@ -11,7 +11,9 @@ class AccessToken:
     expires_in: datetime
 
 
-async def getAccessToken(appId: str, appSecret: str, client: AsyncClient) -> AccessToken | None:
+async def getAccessToken(
+    appId: str, appSecret: str, client: AsyncClient
+) -> AccessToken | None:
     url = Urls.getAppAccessToken
     headers = {"Content-Type": "application/json"}
     data = {"appId": appId, "clientSecret": appSecret}

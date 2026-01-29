@@ -25,12 +25,16 @@ class GlmAi(PluginBase):
             match command:
                 case "clear":
                     PersonHistory(author["id"]).clearHistory()
-                    
-                    await HttpSender.sendText2Person("已清空历史记录", message, author["id"])
+
+                    await HttpSender.sendText2Person(
+                        "已清空历史记录", message, author["id"]
+                    )
                 case _:
                     logger.warning(f"未知命令: {command}")
-                    await HttpSender.sendText2Person("使用 “!clear” 清空历史记录", message, author["id"])
-                    
+                    await HttpSender.sendText2Person(
+                        "使用 “!clear” 清空历史记录", message, author["id"]
+                    )
+
         else:
             reply = await RequApi.RequApi(content, author["id"])
             await HttpSender.sendText2Person(reply, message, author["id"])

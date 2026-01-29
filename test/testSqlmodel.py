@@ -6,7 +6,6 @@ from enum import Enum
 from sqlmodel import SQLModel, Field, create_engine, Session, select, Relationship  # type: ignore
 from sqlalchemy import Column, String, CheckConstraint, text, ForeignKey, event
 
-
 ROOT = Path(__file__).parent
 sqlDir = ROOT / "sql"
 

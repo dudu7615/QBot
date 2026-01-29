@@ -13,7 +13,6 @@ class Holiday(PluginBase):
 
     _checked = False
 
-
     @property
     def messageType(self) -> MessageType.Group | MessageType.Person:
         return MessageType.Person.C2C_MESSAGE_CREATE
@@ -26,10 +25,10 @@ class Holiday(PluginBase):
         if not self._checked:
             RequApi.checkAndUpdata()
             self._checked = True
-        
+
         author = message["d"]["author"]
-        
-        nextHoliday =  Cache.getNextHoliday(datetime.now())
+
+        nextHoliday = Cache.getNextHoliday(datetime.now())
         nextDeHoliday = Cache.getNextDeHoliday(datetime.now())
 
         if nextHoliday is None:
@@ -37,6 +36,8 @@ class Holiday(PluginBase):
         elif nextDeHoliday is None:
             reply = f"下一个假期是{nextHoliday.name}，日期为{nextHoliday.date.strftime('%Y-%m-%d')}"
         else:
-            reply = (f"下一个假期是{nextHoliday.name}，日期为{nextHoliday.date.strftime('%Y-%m-%d')}\n"
-                     f"下一个调休是{nextDeHoliday.name}，日期为{nextDeHoliday.date.strftime('%Y-%m-%d')}")
+            reply = (
+                f"下一个假期是{nextHoliday.name}，日期为{nextHoliday.date.strftime('%Y-%m-%d')}\n"
+                f"下一个调休是{nextDeHoliday.name}，日期为{nextDeHoliday.date.strftime('%Y-%m-%d')}"
+            )
         await HttpSender.sendText2Person(reply, message, author["id"])
