@@ -1,4 +1,4 @@
 {
     "Codegeex.RepoIndex": true,
-    "editor.defaultFormatter": "ms-python.black-formatter"
+    "editor.defaultFormatter": "charliermarsh.ruff"
 }

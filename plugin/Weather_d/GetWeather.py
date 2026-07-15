@@ -1,5 +1,5 @@
+import httpx
 from modules.Logger import logger
-from modules.HttpSender import client
 from plugin.Weather_d.SqlCache import Cache, WeatherType
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,6 +11,8 @@ with open(ROOT / "config.yaml", "r", encoding="utf-8") as f:
     _config = yaml.safe_load(f)
     key: str = _config["privKey"]
 _lastCheck = datetime.now()
+
+client: httpx.AsyncClient = httpx.AsyncClient(timeout=10.0)
 
 
 async def getTodayWeather(cityName: str) -> str:
