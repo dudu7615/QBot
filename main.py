@@ -1,70 +1,231 @@
-from fastapi import FastAPI
+"""
+QBot — QQ Bot 主入口。
+
+基于 HermesWss WebSocket 客户端连接 QQ Bot Gateway，
+替代传统的 FastAPI webhook 方式，无需公网暴露端口。
+
+数据流：
+  QQ Gateway (WebSocket)
+    → QQWebSocketClient._read_events
+      → _dispatch_payload → _on_message
+        → on_message 回调 → MainServer.on_message
+          → 转换为旧 MessageData 格式 → 插件分发
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+
+from modules.Config import config
 from modules.Logger import logger
 from modules.Types import MessageData
+from modules.HermesWss import QQWebSocketClient, QQMessage
 from plugin import PluginMeta
 
 
 class MainServer:
+    """QQ Bot 主服务器。
+
+    管理插件系统和 WebSocket 客户端生命周期。
+    """
+
     plugins = PluginMeta.plugins
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.managedMessage: list[str] = []
-        self.app = FastAPI()
+        self.client: QQWebSocketClient | None = None
+        logger.info(f"插件注册完成, 共 {len(self.plugins)} 个插件")
 
-        self.app.post("/")(self.handleMessage)
+    # ==================================================================
+    # 生命周期
+    # ==================================================================
 
-    async def handleMessage(self, message: MessageData):
+    async def start(self) -> None:
+        """启动 HermesWss WebSocket 客户端。"""
+        app_id: str = config["appId"]
+        client_secret: str = config["clientSecret"]
 
-        content = message["d"]["content"]
-        message_type = message["t"]
-        if message["d"]["id"] in self.managedMessage:
-            logger.warning("Message already handled, skipping...")
+        logger.info(f"正在启动 WebSocket 客户端 (app_id={app_id})...")
+
+        self.client = QQWebSocketClient(
+            app_id=app_id,
+            client_secret=client_secret,
+            on_message=self.on_message,
+            on_interaction=self.on_interaction,
+        )
+
+        success: bool = await self.client.start()
+        if not success:
+            logger.error("WebSocket 客户端启动失败")
+            sys.exit(1)
+
+        logger.info("WebSocket 客户端启动成功, 等待消息...")
+
+    async def stop(self) -> None:
+        """停止 HermesWss WebSocket 客户端。"""
+        if self.client is not None:
+            logger.info("正在停止 WebSocket 客户端...")
+            await self.client.stop()
+            self.client = None
+        logger.info("应用已停止")
+
+    # ==================================================================
+    # 消息转换 (QQMessage → 旧 MessageData 格式)
+    # ==================================================================
+
+    def _to_old_message_data(self, msg: QQMessage) -> MessageData:
+        """将 HermesWss 的 QQMessage 转换为旧版插件系统的 MessageData。
+
+        Args:
+            msg: HermesWss 消息对象。
+
+        Returns:
+            兼容旧插件系统的 MessageData TypedDict。
+        """
+        # 确定发送者 ID（兼容旧插件用 author["id"] 做回复目标）
+        author_id: str = ""
+        group_openid: str = msg.group_openid or ""
+        if msg.event_type == "C2C_MESSAGE_CREATE":
+            author_id = msg.user_openid or ""
+        elif msg.event_type in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            author_id = msg.group_member_openid or msg.group_openid or ""
+
+        return {
+            "id": msg.id,
+            "d": {
+                "id": msg.id,
+                "content": msg.content,
+                "timestamp": msg.timestamp,
+                "author": {
+                    "id": author_id,
+                    "user_openid": msg.user_openid or "",
+                    "union_openid": (
+                        msg.author.union_openid if msg.author else ""
+                    ) or "",
+                },
+                "message_type": 0,
+                "group_openid": group_openid,
+            },
+            "t": msg.event_type,
+            "event_id": msg.event_id,
+        }
+
+    # ==================================================================
+    # HermesWss 回调
+    # ==================================================================
+
+    async def on_message(self, msg: QQMessage) -> None:
+        """HermesWss WebSocket 消息回调。
+
+        将 QQMessage 转为旧格式后复用现有插件分发逻辑。
+
+        Args:
+            msg: HermesWss 消息对象。
+        """
+        # 转为旧格式
+        message: MessageData = self._to_old_message_data(msg)
+        content: str = msg.content
+        message_type: str = msg.event_type
+
+        # 消息去重
+        if msg.id in self.managedMessage:
+            logger.warning(f"消息去重跳过: {msg.id[:12]}...")
             return
-        self.managedMessage.append(message["d"]["id"])
+        self.managedMessage.append(msg.id)
         if len(self.managedMessage) > 1000:
             self.managedMessage = self.managedMessage[-500:]
-        logger.info(f"Received message - {message['d']['content']}")
 
-        # 统一处理插件调用逻辑
+        logger.info(f"收到消息 [{message_type}] content={message['d']['content']}")
+
+        # 统一处理插件调用逻辑（与原 handleMessage 一致）
+        await self._dispatch_to_plugins(message, content, message_type)
+
+    async def on_interaction(self, event: object) -> None:
+        """HermesWss 按钮交互事件回调。
+
+        Args:
+            event: InteractionEvent 对象。
+        """
+        # 暂不支持按钮交互事件，可后续扩展
+        logger.debug(f"收到按钮交互事件 (暂不处理): {event}")
+
+    # ==================================================================
+    # 插件分发（与原 handleMessage 逻辑一致）
+    # ==================================================================
+
+    async def _dispatch_to_plugins(
+        self,
+        message: MessageData,
+        content: str,
+        message_type: str,
+    ) -> None:
+        """将消息分发给匹配的插件。
+
+        Args:
+            message: 转换后的旧格式消息数据。
+            content: 消息文本内容。
+            message_type: 事件类型字符串。
+        """
         for plugin in self.plugins:
-            if message_type == plugin.messageType.value:
-                # 对于命令型消息（以/开头）匹配特定前缀
-                if content.startswith("/"):
-                    if (
-                        isinstance(plugin.messageStartWith, str)
-                        and plugin.messageStartWith == content.split(" ")[0]
-                    ):
+            # 检查事件类型匹配（支持单个或列表）
+            types = plugin.messageType
+            if isinstance(types, list):
+                if not any(message_type == t.value for t in types):
+                    continue
+            else:
+                if message_type != types.value:
+                    continue
 
-                        logger.info(f"call special plugin: {plugin.pluginName}")
+            if content.startswith("/"):
+                # 命令型消息 — 匹配特定前缀
+                command: str = content.split(" ")[0]
+                if isinstance(plugin.messageStartWith, str):
+                    if plugin.messageStartWith == command:
+                        logger.info(f"调用命令插件: {plugin.pluginName}")
                         await plugin.run(message)
-                        break
-                    elif (
-                        isinstance(plugin.messageStartWith, list)
-                        and content.split(" ")[0] in plugin.messageStartWith
-                    ):
-
-                        logger.info(f"call special plugin: {plugin.pluginName}")
+                        return
+                elif isinstance(plugin.messageStartWith, list):
+                    if command in plugin.messageStartWith:
+                        logger.info(f"调用命令插件: {plugin.pluginName}")
                         await plugin.run(message)
-                        break
+                        return
 
-                # 对于普通消息，匹配空前缀的插件
-                elif not content.startswith("/") and plugin.messageStartWith == "":
-                    logger.info(f"call plugin: {plugin.pluginName}")
-                    await plugin.run(message)
-                    break
+            elif not content.startswith("/") and plugin.messageStartWith == "":
+                # 普通消息 — 匹配空前缀的插件
+                logger.info(f"调用插件: {plugin.pluginName}")
+                await plugin.run(message)
+                return
 
+
+# ======================================================================
+# 入口
+# ======================================================================
 
 server = MainServer()
 
 
-if __name__ == "__main__":
-    logger.info("Starting application")
-    logger.info("Application initialized successfully")
-    import uvicorn
+async def main() -> None:
+    """异步主入口。"""
+    await server.start()
 
-    uvicorn.run(
-        "main:server.app",
-        host="0.0.0.0",
-        port=8000,
-        workers=2,
-    )
+    # 保持运行，直到收到中断信号
+    try:
+        await asyncio.Future()  # 永久等待
+    except KeyboardInterrupt:
+        logger.info("收到中断信号")
+    finally:
+        await server.stop()
+
+
+if __name__ == "__main__":
+    logger.info("=" * 40)
+    logger.info("QBot 启动中...")
+    logger.info("=" * 40)
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        logger.info("应用已退出")

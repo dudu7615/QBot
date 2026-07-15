@@ -634,11 +634,10 @@ class QQWebSocketClient:
             elif event_type in {
                 "C2C_MESSAGE_CREATE",
                 "GROUP_AT_MESSAGE_CREATE",
+                "GROUP_MESSAGE_CREATE",
                 "DIRECT_MESSAGE_CREATE",
-                "GUILD_MESSAGE_CREATE",
-                "GUILD_AT_MESSAGE_CREATE",
             } and isinstance(data, dict):
-                await self._on_message(event_type, data)
+                await self._on_message(event_type, data, payload.id or "")
 
             elif event_type == "INTERACTION_CREATE" and isinstance(data, dict):
                 await self._on_interaction(data)
@@ -723,7 +722,12 @@ class QQWebSocketClient:
     # 消息处理
     # ==================================================================
 
-    async def _on_message(self, event_type: str, data: dict[str, object]) -> None:
+    async def _on_message(
+        self,
+        event_type: str,
+        data: dict[str, object],
+        event_id: str = "",
+    ) -> None:
         """处理收到的消息事件。
 
         Args:
@@ -771,6 +775,7 @@ class QQWebSocketClient:
             timestamp=timestamp,
             author=author,
             event_type=event_type,
+            event_id=event_id,
             raw=data,
         )
 
@@ -782,7 +787,7 @@ class QQWebSocketClient:
                 if isinstance(uoid, str):
                     msg.user_openid = uoid
 
-        elif event_type == "GROUP_AT_MESSAGE_CREATE":
+        elif event_type in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
             group_openid_raw: object = data.get("group_openid")
             if isinstance(group_openid_raw, str):
                 msg.group_openid = group_openid_raw
@@ -888,9 +893,15 @@ class QQWebSocketClient:
         if isinstance(t_obj, str):
             t = t_obj
 
+        event_id: str | None = None
+        id_obj: object = data.get("id")
+        if isinstance(id_obj, str):
+            event_id = id_obj
+
         return WSPayload(
             op=op,
             d=data.get("d"),
             s=seq,
             t=t,
+            id=event_id,
         )
