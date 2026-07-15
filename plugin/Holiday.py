@@ -14,8 +14,14 @@ class Holiday(PluginBase):
     _checked = False
 
     @property
-    def messageType(self) -> MessageType.Group | MessageType.Person:
-        return MessageType.Person.C2C_MESSAGE_CREATE
+    def messageType(
+        self,
+    ) -> list[MessageType.Group | MessageType.Person]:
+        return [
+            MessageType.Person.C2C_MESSAGE_CREATE,
+            MessageType.Group.GROUP_AT_MESSAGE_CREATE,
+            MessageType.Group.GROUP_MESSAGE_CREATE,
+        ]
 
     @property
     def pluginName(self) -> str:
@@ -40,4 +46,8 @@ class Holiday(PluginBase):
                 f"下一个假期是{nextHoliday.name}，日期为{nextHoliday.date.strftime('%Y-%m-%d')}\n"
                 f"下一个调休是{nextDeHoliday.name}，日期为{nextDeHoliday.date.strftime('%Y-%m-%d')}"
             )
-        await HttpSender.sendText2Person(reply, message, author["id"])
+
+        if message["t"] in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            await HttpSender.sendText2Group(reply, message, message["d"]["group_openid"])
+        else:
+            await HttpSender.sendText2Person(reply, message, author["id"])
