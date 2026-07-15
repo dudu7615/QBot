@@ -128,6 +128,7 @@ class QQMessageSender:
         content: str,
         reply_to: str | None = None,
         keyboard: InlineKeyboard | None = None,
+        event_id: str | None = None,
     ) -> dict[str, object]:
         """构建文字消息请求体。
 
@@ -135,16 +136,31 @@ class QQMessageSender:
             content: 消息文本内容（纯文本，非 Markdown）。
             reply_to: 要回复的消息 ID（可选）。
             keyboard: 附加的内联键盘（可选）。
+            event_id: 网关事件 ID（可选，用于被动回复）。
 
         Returns:
             可用于 API 请求的消息体字典。
         """
+        # 生成消息序列号（防重放 + 回复链标识）
+        import time as _time
+        import uuid as _uuid
+        time_part: int = int(_time.time()) % 100000000
+        rand_part: int = int(_uuid.uuid4().hex[:4], 16)
+        msg_seq: int = (time_part ^ rand_part) % 65536
+
         body: dict[str, object] = {
             "content": content,
             "msg_type": MSG_TYPE_TEXT,
+            "msg_seq": msg_seq,
         }
         if reply_to is not None:
             body["msg_id"] = reply_to
+            body["message_reference"] = {
+                "message_id": reply_to,
+                "ignore_get_message_error": True,
+            }
+        if event_id:
+            body["event_id"] = event_id
         if keyboard is not None:
             body["keyboard"] = keyboard.to_dict()
         return body
@@ -155,6 +171,7 @@ class QQMessageSender:
         content: str,
         reply_to: str | None = None,
         keyboard: InlineKeyboard | None = None,
+        event_id: str | None = None,
     ) -> SendResult:
         """发送文字消息到 C2C 私聊。
 
@@ -167,7 +184,7 @@ class QQMessageSender:
         Returns:
             发送结果（SendResult）。
         """
-        body: dict[str, object] = self._build_text_body(content, reply_to, keyboard)
+        body: dict[str, object] = self._build_text_body(content, reply_to, keyboard, event_id)
         return await self._send_with_retry("POST", f"/v2/users/{openid}/messages", body)
 
     async def send_text_to_group(
@@ -176,6 +193,7 @@ class QQMessageSender:
         content: str,
         reply_to: str | None = None,
         keyboard: InlineKeyboard | None = None,
+        event_id: str | None = None,
     ) -> SendResult:
         """发送文字消息到群聊。
 
@@ -188,7 +206,7 @@ class QQMessageSender:
         Returns:
             发送结果（SendResult）。
         """
-        body: dict[str, object] = self._build_text_body(content, reply_to, keyboard)
+        body: dict[str, object] = self._build_text_body(content, reply_to, keyboard, event_id)
         return await self._send_with_retry("POST", f"/v2/groups/{group_openid}/messages", body)
 
     async def send_long_text_to_c2c(
@@ -196,6 +214,7 @@ class QQMessageSender:
         openid: str,
         content: str,
         reply_to: str | None = None,
+        event_id: str | None = None,
     ) -> list[SendResult]:
         """发送长文字到 C2C，超长时自动分片。
 
@@ -203,6 +222,7 @@ class QQMessageSender:
             openid: 用户的 openid。
             content: 消息文本（自动按 4000 字符分片）。
             reply_to: 回复的消息 ID（仅第一片携带）。
+            event_id: 网关事件 ID（仅第一片携带）。
 
         Returns:
             每片的发送结果列表。
@@ -212,6 +232,7 @@ class QQMessageSender:
             content,
             reply_to,
             is_group=False,
+            event_id=event_id,
         )
 
     async def send_long_text_to_group(
@@ -219,6 +240,7 @@ class QQMessageSender:
         group_openid: str,
         content: str,
         reply_to: str | None = None,
+        event_id: str | None = None,
     ) -> list[SendResult]:
         """发送长文字到群聊，超长时自动分片。
 
@@ -226,6 +248,7 @@ class QQMessageSender:
             group_openid: 群的 openid。
             content: 消息文本（自动按 4000 字符分片）。
             reply_to: 回复的消息 ID（仅第一片携带）。
+            event_id: 网关事件 ID（仅第一片携带）。
 
         Returns:
             每片的发送结果列表。
@@ -235,6 +258,7 @@ class QQMessageSender:
             content,
             reply_to,
             is_group=True,
+            event_id=event_id,
         )
 
     async def _send_chunked(
@@ -243,6 +267,7 @@ class QQMessageSender:
         content: str,
         reply_to: str | None = None,
         is_group: bool = False,
+        event_id: str | None = None,
     ) -> list[SendResult]:
         """将长文本按 4000 字符分片发送。
 
@@ -251,6 +276,7 @@ class QQMessageSender:
             content: 消息文本。
             reply_to: 初始回复的消息 ID。
             is_group: 是否为群聊消息。
+            event_id: 网关事件 ID（仅第一片携带）。
 
         Returns:
             每片的发送结果列表。
@@ -259,8 +285,8 @@ class QQMessageSender:
 
         async def _do_send(text: str, reply: str | None) -> SendResult:
             if is_group:
-                return await self.send_text_to_group(chat_id, text, reply)
-            return await self.send_text_to_c2c(chat_id, text, reply)
+                return await self.send_text_to_group(chat_id, text, reply, event_id=event_id)
+            return await self.send_text_to_c2c(chat_id, text, reply, event_id=event_id)
 
         if len(content) <= MAX_MESSAGE_LENGTH:
             result: SendResult = await _do_send(content, reply_to)

@@ -82,12 +82,14 @@ class WSPayload(BaseModel):
         d: 事件数据（payload body）。
         s: 序列号（仅 op 0 Dispatch 时存在）。
         t: 事件类型（仅 op 0 Dispatch 时存在，如 C2C_MESSAGE_CREATE）。
+        id: 事件 ID（仅 op 0 Dispatch 时存在，用于被动回复）。
     """
 
     op: int
     d: object | None = None
     s: int | None = None
     t: str | None = None
+    id: str | None = None
 
 
 class GatewayResponse(BaseModel):
@@ -147,6 +149,7 @@ class QQMessage(BaseModel):
     group_openid: str | None = None
     group_member_openid: str | None = None
     event_type: str = ""
+    event_id: str = ""  # 网关事件 ID，用于被动回复
     raw: dict[str, object] = Field(default_factory=dict)
 
 
