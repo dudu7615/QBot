@@ -1,11 +1,15 @@
 from typing import TypedDict
 import yaml
-from plugin.GlmAi_d import Paths
+from plugin.AiChat_d import Paths
 
 
 class Config(TypedDict):
     apiKey: str
+    url: str
+    model: str
     personality: str
+    max_context_length: int  # 超过此消息数时触发上下文截断
+    keep_recent: int  # 截断后保留的最新消息数（含 system prompt）
 
 
 config: Config = yaml.load(
