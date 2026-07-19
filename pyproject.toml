@@ -8,11 +8,41 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "aiohttp>=3.11.0",
     "cryptography>=46.0.3",
     "fastapi>=0.119.0",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
+    "pydantic>=2.0.0",
     "pyyaml>=6.0.3",
+    "qrcode>=8.2",
     "sqlmodel>=0.0.27",
     "uvicorn>=0.38.0",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.2.0",
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_any_unimported = false
+disallow_any_expr = false
+disallow_any_decorated = false
+disallow_any_explicit = false
+
+# HermesWss 模块 mypy 配置
+[[tool.mypy.overrides]]
+module = "modules.HermesWss.*"
+strict = true
+disallow_any_unimported = true
+disallow_any_expr = true
+disallow_any_decorated = true
+disallow_any_explicit = true
+warn_unused_ignores = true
+no_implicit_optional = true
