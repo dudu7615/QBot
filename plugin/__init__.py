@@ -1,7 +1,7 @@
 from .PluginBase import PluginBase, PluginMeta, MessageType, MessageData
 from .TestPlugin import TestPlugin
 from .TestAutoReply import TestAutoReply
-from .GlmAi import GlmAi
+from .AiChat import AiChat
 from .Weather import Weather
 from .Holiday import Holiday
 
@@ -12,7 +12,7 @@ __all__ = [
     "MessageData",
     "TestPlugin",
     "TestAutoReply",
-    "GlmAi",
+    "AiChat",
     "Weather",
     "Holiday",
 ]

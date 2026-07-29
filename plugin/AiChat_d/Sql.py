@@ -13,7 +13,7 @@ from sqlalchemy import (
     MetaData,
 )
 
-from plugin.GlmAi_d import Paths
+from plugin.AiChat_d import Paths
 
 # 创建独立的metadata
 _sqlMetadata = MetaData()
@@ -130,6 +130,33 @@ class Message(_Model, table=True):
             if user := session.get(User, openId):
                 user.messageCount = 0
                 user.latestChat = datetime.now()
+            try:
+                session.commit()
+            except Exception:
+                session.rollback()
+
+    @staticmethod
+    def truncateTo(openId: str, keep_count: int) -> None:
+        """保留最近 keep_count 条消息，删除更早的。
+
+        Args:
+            openId: 用户 openid。
+            keep_count: 保留的最新消息数量（含 system prompt）。
+        """
+        with Session(_engine) as session:
+            all_msgs: list[Message] = list(
+                session.exec(
+                    select(Message)
+                    .where(Message.openId == openId)
+                    .order_by(text("createdAt DESC"))
+                )
+            )
+            if len(all_msgs) > keep_count:
+                for msg in all_msgs[keep_count:]:
+                    session.delete(msg)
+                if user := session.get(User, openId):
+                    user.messageCount = keep_count
+                    user.latestChat = datetime.now()
             try:
                 session.commit()
             except Exception:

@@ -30,7 +30,13 @@ class PluginBase(ABC, metaclass=PluginMeta):
 
     @property
     @abstractmethod
-    def messageType(self) -> MessageType.Group | MessageType.Person:
+    def messageType(
+        self,
+    ) -> (
+        MessageType.Group
+        | MessageType.Person
+        | list[MessageType.Group | MessageType.Person]
+    ):
         pass
 
     @property

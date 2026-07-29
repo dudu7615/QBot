@@ -14,12 +14,14 @@ class MessageData_d(TypedDict):
     timestamp: str
     author: MessageData_d_Author
     message_type: int
+    group_openid: str  # 群聊 openid（C2C 消息为空字符串）
 
 
 class MessageData(TypedDict):
     id: str
     d: MessageData_d
     t: str  # 事件类型
+    event_id: str  # 网关事件 ID（用于被动回复）
 
 
 class MessageType:
@@ -34,6 +36,7 @@ class MessageType:
     class Group(Enum):
         # 群聊事件
         GROUP_AT_MESSAGE_CREATE = "GROUP_AT_MESSAGE_CREATE"  # 群消息事件 AT 事件
+        GROUP_MESSAGE_CREATE = "GROUP_MESSAGE_CREATE"  # 群消息事件（2026 新协议）
         GROUP_ADD_ROBOT = "GROUP_ADD_ROBOT"  # 群添加机器人
         GROUP_DEL_ROBOT = "GROUP_DEL_ROBOT"  # 群移除机器人
         GROUP_MSG_RECEIVE = "GROUP_MSG_RECEIVE"  # 群打开消息推送

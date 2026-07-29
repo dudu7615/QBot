@@ -1,5 +1,5 @@
+import httpx
 from plugin.Holiday_d.SqlCache import Cache
-from modules.HttpSender import httpx
 from modules.Logger import logger
 from datetime import datetime
 

@@ -1,10 +1,12 @@
-from modules.HttpSender import client
+import httpx
 from modules.Logger import logger
-from plugin.GlmAi_d.Types import ApiJson, ApiJson_Messages
-from plugin.GlmAi_d.Config import config
-from plugin.GlmAi_d.History import PersonHistory
+from plugin.AiChat_d.Types import ApiJson, ApiJson_Messages
+from plugin.AiChat_d.Config import config
+from plugin.AiChat_d.History import PersonHistory
 
-url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+client: httpx.AsyncClient = httpx.AsyncClient(timeout=60.0)
+
+url = config["url"]
 
 
 async def RequApi(messages: str, openId: str) -> str:
@@ -12,7 +14,7 @@ async def RequApi(messages: str, openId: str) -> str:
     history = PersonHistory(openId)
 
     payloda: ApiJson = {
-        "model": "GLM-4-Flash-250414",
+        "model": config["model"],
         "messages": history.getHistory() + [{"role": "user", "content": messages}],
         "stream": False,
         "temperature": 0.7,
