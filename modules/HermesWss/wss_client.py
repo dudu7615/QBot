@@ -792,11 +792,18 @@ class QQWebSocketClient:
             if isinstance(group_openid_raw, str):
                 msg.group_openid = group_openid_raw
 
+            # 群成员 openid 在事件顶层或 author.member_openid 中都可能出现，
+            # 顶层缺失时回退到 author，避免发送者身份被误判成群 openid
             member_openid_raw: object = data.get("group_member_openid")
-            if isinstance(member_openid_raw, str):
-                msg.group_member_openid = member_openid_raw
+            member_openid: str = (
+                member_openid_raw
+                if isinstance(member_openid_raw, str) and member_openid_raw
+                else (msg.author.member_openid if msg.author is not None else "") or ""
+            )
+            if member_openid:
+                msg.group_member_openid = member_openid
                 if msg.author is not None:
-                    msg.author.member_openid = member_openid_raw
+                    msg.author.member_openid = member_openid
 
         # 触发回调
         if self.on_message is not None:
