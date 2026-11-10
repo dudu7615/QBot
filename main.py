@@ -32,7 +32,6 @@ class MainServer:
     plugins = PluginMeta.plugins
 
     def __init__(self) -> None:
-        self.managedMessage: list[str] = []
         self.client: QQWebSocketClient | None = None
         logger.info(f"插件注册完成, 共 {len(self.plugins)} 个插件")
 
@@ -134,14 +133,6 @@ class MainServer:
         message: MessageData = self._to_old_message_data(msg)
         content: str = msg.content
         message_type: str = msg.event_type
-
-        # 消息去重
-        if msg.id in self.managedMessage:
-            logger.warning(f"消息去重跳过: {msg.id[:12]}...")
-            return
-        self.managedMessage.append(msg.id)
-        if len(self.managedMessage) > 1000:
-            self.managedMessage = self.managedMessage[-500:]
 
         logger.info(f"收到消息 [{message_type}] content={message['d']['content']}")
 

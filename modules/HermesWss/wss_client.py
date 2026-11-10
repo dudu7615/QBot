@@ -21,6 +21,7 @@ import asyncio
 import json
 import time
 import uuid
+from collections import OrderedDict
 from typing import Callable
 
 import aiohttp
@@ -32,6 +33,7 @@ from .constants import (
     GATEWAY_URL_PATH,
     MAX_RECONNECT_ATTEMPTS,
     QUICK_DISCONNECT_THRESHOLD,
+    DEDUP_MAX_SIZE,
     MAX_CONCURRENT_HANDLERS,
     MAX_QUICK_DISCONNECT_COUNT,
     RATE_LIMIT_DELAY,
@@ -115,7 +117,7 @@ class QQWebSocketClient:
         self._heartbeat_task: asyncio.Task[None] | None = None
 
         # 消息去重
-        self._seen_msg_ids: set[str] = set()
+        self._seen_msg_ids: OrderedDict[str, None] = OrderedDict()
         self._dedup_lock: asyncio.Lock = asyncio.Lock()
 
         # 不可恢复的断开时置位，供上层感知客户端已停止
@@ -767,15 +769,14 @@ class QQWebSocketClient:
         if not msg_id:
             return
 
-        # 消息去重
+        # 消息去重：用有序字典按插入顺序淘汰最旧的 id
         async with self._dedup_lock:
             if msg_id in self._seen_msg_ids:
                 logger.debug(f"[QQBot] Duplicate message: {msg_id}")
                 return
-            self._seen_msg_ids.add(msg_id)
-            # 限制去重集合大小
-            if len(self._seen_msg_ids) > 1000:
-                self._seen_msg_ids = set(list(self._seen_msg_ids)[-500:])
+            self._seen_msg_ids[msg_id] = None
+            while len(self._seen_msg_ids) > DEDUP_MAX_SIZE:
+                self._seen_msg_ids.popitem(last=False)
 
         # 解析消息内容
         content_obj: object = data.get("content", "")
