@@ -64,9 +64,9 @@ class Weather(PluginBase):
     @staticmethod
     def _reply_target(message: MessageData) -> ReplyTarget:
         """根据消息类型返回 (发送方式, 目标 ID)。"""
-        if message["t"] in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
-            return ("group", message["d"]["group_openid"])
-        return ("person", message["d"]["author"]["id"])
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            return ("group", message.d.group_openid)
+        return ("person", message.d.author.id)
 
     async def _reply(self, text: str, message: MessageData) -> None:
         """按消息来源回复文本。
@@ -95,9 +95,9 @@ class Weather(PluginBase):
             return argument
         return SqlCache.User.get(author_id)
 
-    async def run(self, message: MessageData):
-        command = _parse_command(message["d"]["content"])
-        author_id: str = message["d"]["author"]["id"]
+    async def run(self, message: MessageData) -> None:
+        command = _parse_command(message.d.content)
+        author_id: str = message.d.author.id
 
         if command.name in {"今日天气", "天气预报"}:
             if not command.valid:

@@ -14,8 +14,8 @@ from modules.HermesWss import QQMessageSender, SendResult
 
 # 模块级单例 — 所有插件共用
 _sender: QQMessageSender = QQMessageSender(
-    app_id=config["appId"],
-    client_secret=config["clientSecret"],
+    app_id=config.appId,
+    client_secret=config.clientSecret,
 )
 
 
@@ -28,7 +28,7 @@ def _reply_context(message: MessageData) -> tuple[str, str | None]:
     Returns:
         (msg_id, event_id)，event_id 缺失时为 None。
     """
-    return message["d"]["id"], message.get("event_id") or None
+    return message.d.id, message.event_id or None
 
 
 def _log_result(

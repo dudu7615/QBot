@@ -1,27 +1,52 @@
-from typing import TypedDict
+"""全局数据类型：消息事件与消息体。"""
+
 from enum import Enum
 
+from pydantic import BaseModel
 
-class MessageData_d_Author(TypedDict):
+
+class MessageAuthor(BaseModel):
+    """消息发送者信息。"""
+
     id: str
     user_openid: str
     union_openid: str
 
 
-class MessageData_d(TypedDict):
+class MessageContent(BaseModel):
+    """消息体。
+
+    Attributes:
+        id: 消息 id，用于被动回复。
+        content: 消息文本。
+        timestamp: 消息时间戳。
+        author: 发送者信息。
+        message_type: 遗留字段，固定为 0。
+        group_openid: 群 openid（私聊为空字符串）。
+    """
+
     id: str
     content: str
     timestamp: str
-    author: MessageData_d_Author
-    message_type: int
-    group_openid: str  # 群聊 openid（C2C 消息为空字符串）
+    author: MessageAuthor
+    message_type: int = 0
+    group_openid: str = ""
 
 
-class MessageData(TypedDict):
+class MessageData(BaseModel):
+    """插件层统一的消息结构。
+
+    Attributes:
+        id: 消息 id。
+        d: 消息体。
+        t: 事件类型。
+        event_id: 网关事件 id，用于被动回复。
+    """
+
     id: str
-    d: MessageData_d
-    t: str  # 事件类型
-    event_id: str  # 网关事件 ID（用于被动回复）
+    d: MessageContent
+    t: str
+    event_id: str = ""
 
 
 class MessageType:

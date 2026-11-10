@@ -27,7 +27,7 @@ class PersonHistory:
         if Message.countByRole(self.openId, MessageRole.system) > 0:
             return
 
-        personality_file = Paths.PERSONALITY / f"{config['personality']}"
+        personality_file = Paths.PERSONALITY / f"{config.personality}"
         with open(personality_file, "r", encoding="utf-8") as file:
             Message.addMessage(self.openId, file.read(), MessageRole.system)
 
@@ -46,7 +46,7 @@ class PersonHistory:
 
         messages: list[Message] = Message.getByOpenId(self.openId)
 
-        if len(messages) > config["max_context_length"]:
+        if len(messages) > config.max_context_length:
             messages = self._truncate(messages)
 
         return [{"role": msg.role, "content": msg.content} for msg in messages]
@@ -61,9 +61,9 @@ class PersonHistory:
             裁剪后的消息列表，第一项为 system prompt。
         """
         system_prompt: Message = messages[0]
-        keep_recent: int = max(config["keep_recent"] - 1, 0)
+        keep_recent: int = max(config.keep_recent - 1, 0)
         recent: list[Message] = messages[-keep_recent:] if keep_recent else []
-        Message.truncateTo(self.openId, config["keep_recent"])
+        Message.truncateTo(self.openId, config.keep_recent)
         return [system_prompt] + recent
 
     def clearHistory(self) -> None:

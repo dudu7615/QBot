@@ -38,8 +38,8 @@ class AiChat(PluginBase):
         Returns:
             会话标识。
         """
-        author = message["d"]["author"]
-        return author["union_openid"] or author["id"]
+        author = message.d.author
+        return author.union_openid or author.id
 
     async def _reply(self, text: str, message: MessageData) -> None:
         """按消息来源回复文本。
@@ -48,13 +48,13 @@ class AiChat(PluginBase):
             text: 回复内容。
             message: 收到的消息。
         """
-        if message["t"] in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
-            await HttpSender.sendText2Group(text, message, message["d"]["group_openid"])
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            await HttpSender.sendText2Group(text, message, message.d.group_openid)
         else:
-            await HttpSender.sendText2Person(text, message, message["d"]["author"]["id"])
+            await HttpSender.sendText2Person(text, message, message.d.author.id)
 
     async def run(self, message: MessageData) -> None:
-        content: str = message["d"]["content"]
+        content: str = message.d.content
         session_id: str = self._session_id(message)
 
         if content.startswith(_COMMAND_PREFIXES):

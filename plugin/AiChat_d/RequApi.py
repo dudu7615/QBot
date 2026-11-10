@@ -66,7 +66,7 @@ async def request_reply(message: str, open_id: str) -> str:
     """
     history = PersonHistory(open_id)
     payload: ApiJson = {
-        "model": config["model"],
+        "model": config.model,
         "messages": history.getHistory() + [{"role": "user", "content": message}],
         "stream": False,
         "temperature": 0.7,
@@ -75,14 +75,14 @@ async def request_reply(message: str, open_id: str) -> str:
         "do_sample": True,
         "thinking": {"type": "disabled"},
     }
-    headers: dict[str, str] = {"Authorization": f"Bearer {config['apiKey']}"}
+    headers: dict[str, str] = {"Authorization": f"Bearer {config.apiKey}"}
 
     logger.info(f"请求 AI openid={open_id}, 内容={message}")
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             response: httpx.Response = await _get_client().post(
-                config["url"], headers=headers, json=payload
+                config.url, headers=headers, json=payload
             )
             if response.is_success:
                 reply: str = _extract_reply(response.json())

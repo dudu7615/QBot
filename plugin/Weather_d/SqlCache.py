@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from enum import Enum
 import sqlite3
-from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
+from sqlmodel import SQLModel, Field, create_engine, Session, select, delete
 from sqlalchemy import Column, String, CheckConstraint, text, event, MetaData
 
 # 创建独立的metadata

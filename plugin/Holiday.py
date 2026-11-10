@@ -33,7 +33,7 @@ class Holiday(PluginBase):
         """把一条假期记录格式化为 ``名称（YYYY-MM-DD）``。"""
         return f"{cache.name}（{cache.date.strftime('%Y-%m-%d')}）"
 
-    async def run(self, message: MessageData):
+    async def run(self, message: MessageData) -> None:
         if not self._checked:
             RequApi.ensure_cache_fresh()
             self._checked = True
@@ -53,9 +53,7 @@ class Holiday(PluginBase):
             )
 
         logger.info(f"查询最近假期: {reply}")
-        if message["t"] in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
-            await HttpSender.sendText2Group(
-                reply, message, message["d"]["group_openid"]
-            )
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            await HttpSender.sendText2Group(reply, message, message.d.group_openid)
         else:
-            await HttpSender.sendText2Person(reply, message, message["d"]["author"]["id"])
+            await HttpSender.sendText2Person(reply, message, message.d.author.id)
