@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import re
-import logging
 from typing import Optional
 
 from .models import (
@@ -21,8 +20,7 @@ from .models import (
     InteractionEvent,
     PostMessageFn,
 )
-
-logger = logging.getLogger(__name__)
+from modules.Logger import logger
 
 APPROVAL_BUTTON_PREFIX = "approve:"
 UPDATE_PROMPT_PREFIX = "update_prompt:"

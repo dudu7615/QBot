@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-import logging
 import uuid
 from typing import Optional
 
@@ -29,8 +28,7 @@ from .models import (
 from .token_manager import TokenManager
 from .utils import get_api_headers
 
-
-logger = logging.getLogger(__name__)
+from modules.Logger import logger
 
 
 # 同一进程内单调递增的消息序号，QQ 用它区分同一事件下的多条回复
@@ -503,15 +501,12 @@ class QQMessageSender:
             else:
                 await self.send_text_to_group(chat_id, text, reply_to, keyboard)
             logger.info(
-                "Approval request sent to %s:%s (session=%.20s...)",
-                chat_type, chat_id, req.session_key,
+                f"Approval request sent to {chat_type}:{chat_id} "
+                f"(session={req.session_key[:20]}...)"
             )
             return True
         except Exception as exc:
-            logger.error(
-                "Failed to send approval to %s:%s: %s",
-                chat_type, chat_id, exc,
-            )
+            logger.error(f"Failed to send approval to {chat_type}:{chat_id}: {exc}")
             return False
 
     async def send_typing(self, chat_id: str, chat_type: str = "c2c") -> None:
@@ -582,8 +577,8 @@ class QQMessageSender:
             if attempt < max_retries - 1:
                 delay: float = 1.0 * (2.0 ** attempt)
                 logger.warning(
-                    "Send retry %d/%d after %.1fs: %s",
-                    attempt + 1, max_retries, delay, last_error,
+                    f"Send retry {attempt + 1}/{max_retries} "
+                    f"after {delay:.1f}s: {last_error}"
                 )
                 await asyncio.sleep(delay)
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import logging
 from pathlib import Path
 from typing import Callable
 
@@ -26,8 +25,7 @@ from .models import UploadPrepareResponse, UploadPartFinishResponse, UploadCompl
 from .token_manager import TokenManager
 from .utils import get_api_headers
 
-
-logger = logging.getLogger(__name__)
+from modules.Logger import logger
 
 
 # ── 业务错误码 ──────────────────────────────────────────────────────
@@ -165,8 +163,8 @@ class ChunkedUploader:
             chat_id, chat_type, prepare.upload_id,
         )
         logger.info(
-            "Upload complete: %s (%d bytes) → file_info=%s",
-            file_name, file_size, result.file_info,
+            f"Upload complete: {file_name} ({file_size} bytes) "
+            f"→ file_info={result.file_info}"
         )
         return result
 
@@ -319,7 +317,7 @@ class ChunkedUploader:
                     timeout=_PART_UPLOAD_TIMEOUT,
                 )
                 if response.is_success:
-                    logger.debug("Part %d uploaded successfully", part_number)
+                    logger.debug(f"Part {part_number} uploaded successfully")
                     return
 
                 last_error = (

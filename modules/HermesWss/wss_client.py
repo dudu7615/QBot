@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import time
 import uuid
 from typing import Callable
@@ -54,8 +53,7 @@ from .models import (
 from .token_manager import TokenManager
 from .utils import build_user_agent, get_api_headers
 
-
-logger = logging.getLogger(__name__)
+from modules.Logger import logger
 
 
 class QQWebSocketClient:
@@ -161,11 +159,11 @@ class QQWebSocketClient:
             self._listen_task = asyncio.create_task(self._listen_loop())
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-            logger.info("[QQBot] Connected to gateway: %s", gateway_url)
+            logger.info(f"[QQBot] Connected to gateway: {gateway_url}")
             return True
 
         except Exception as exc:
-            logger.error("[QQBot] Startup failed: %s", exc, exc_info=True)
+            logger.exception("[QQBot] Startup failed")
             await self._cleanup()
             self.running = False
             return False
@@ -185,9 +183,8 @@ class QQWebSocketClient:
             if still_pending:
                 await asyncio.gather(*still_pending, return_exceptions=True)
             logger.info(
-                "[QQBot] Dispatch drained: %d done, %d cancelled",
-                len(done),
-                len(still_pending),
+                f"[QQBot] Dispatch drained: {len(done)} done, "
+                f"{len(still_pending)} cancelled"
             )
 
         if self._listen_task is not None:
@@ -260,7 +257,7 @@ class QQWebSocketClient:
                 expires_in: int = int(expires_in_obj) if isinstance(expires_in_obj, (int, float)) else 7200
                 self._token_expires_at = time.time() + expires_in
 
-                logger.info("[QQBot] Access token refreshed, expires in %ds", expires_in)
+                logger.info(f"[QQBot] Access token refreshed, expires in {expires_in}s")
                 return self._access_token
 
             except QQTokenError:
@@ -342,7 +339,7 @@ class QQWebSocketClient:
                     ws_close=CONNECT_TIMEOUT_SECONDS,
                 ),
             )
-            logger.info("[QQBot] WebSocket connected to %s", gateway_url)
+            logger.info(f"[QQBot] WebSocket connected to {gateway_url}")
         except Exception as exc:
             self._ws = None
             raise RuntimeError(f"WebSocket connection failed: {exc}") from exc
@@ -399,8 +396,7 @@ class QQWebSocketClient:
                 code: int | None = exc.code
                 reason_str: str = exc.reason if exc.reason is not None else ""
                 logger.warning(
-                    "[QQBot] WebSocket closed: code=%s reason=%s",
-                    code, reason_str,
+                    f"[QQBot] WebSocket closed: code={code} reason={reason_str}"
                 )
 
                 # 快速断连检测（配置错误 / 权限问题）
@@ -408,8 +404,8 @@ class QQWebSocketClient:
                 if duration < QUICK_DISCONNECT_THRESHOLD and connect_time > 0:
                     quick_disconnect_count += 1
                     logger.info(
-                        "[QQBot] Quick disconnect (%.1fs), count: %d",
-                        duration, quick_disconnect_count,
+                        f"[QQBot] Quick disconnect ({duration:.1f}s), "
+                        f"count: {quick_disconnect_count}"
                     )
                     if quick_disconnect_count >= MAX_QUICK_DISCONNECT_COUNT:
                         logger.error(
@@ -427,8 +423,7 @@ class QQWebSocketClient:
                         close_code: WSCloseCode = WSCloseCode(code)
                         if close_code.is_fatal:
                             logger.error(
-                                "[QQBot] %s. Stop reconnecting.",
-                                close_code.description,
+                                f"[QQBot] {close_code.description}. Stop reconnecting."
                             )
                             self._mark_stopped()
                             return
@@ -442,12 +437,11 @@ class QQWebSocketClient:
                             self._session_id = None
                             self._last_seq = None
                             logger.info(
-                                "[QQBot] Session error (%d), clearing session",
-                                code,
+                                f"[QQBot] Session error ({code}), clearing session"
                             )
                         elif close_code == WSCloseCode.RATE_LIMITED:
                             # 4008: 被限流
-                            logger.info("[QQBot] Rate limited (4008), waiting %ds", RATE_LIMIT_DELAY)
+                            logger.info(f"[QQBot] Rate limited (4008), waiting {RATE_LIMIT_DELAY}s")
                             await asyncio.sleep(RATE_LIMIT_DELAY)
                             if await self._reconnect(backoff_idx):
                                 backoff_idx = 0
@@ -472,7 +466,7 @@ class QQWebSocketClient:
             except Exception as exc:
                 if not self.running:
                     return
-                logger.warning("[QQBot] WebSocket error: %s", exc)
+                logger.warning(f"[QQBot] WebSocket error: {exc}")
 
                 if backoff_idx >= MAX_RECONNECT_ATTEMPTS:
                     logger.error("[QQBot] Max reconnect attempts reached")
@@ -503,8 +497,7 @@ class QQWebSocketClient:
             min(backoff_idx, len(RECONNECT_BACKOFF) - 1)
         ]
         logger.info(
-            "[QQBot] Reconnecting in %.1fs (attempt %d)...",
-            delay, backoff_idx + 1,
+            f"[QQBot] Reconnecting in {delay:.1f}s (attempt {backoff_idx + 1})..."
         )
         await asyncio.sleep(delay)
 
@@ -516,7 +509,7 @@ class QQWebSocketClient:
             logger.info("[QQBot] Reconnected")
             return True
         except Exception as exc:
-            logger.warning("[QQBot] Reconnect failed: %s", exc)
+            logger.warning(f"[QQBot] Reconnect failed: {exc}")
             return False
 
     async def _read_events(self) -> None:
@@ -567,7 +560,7 @@ class QQWebSocketClient:
                 try:
                     await self._ws.send_json({"op": WSOpCode.HEARTBEAT, "d": self._last_seq})
                 except Exception as exc:
-                    logger.debug("[QQBot] Heartbeat failed: %s", exc)
+                    logger.debug(f"[QQBot] Heartbeat failed: {exc}")
         except asyncio.CancelledError:
             pass
 
@@ -614,7 +607,7 @@ class QQWebSocketClient:
         async with self._http_client.post(url, json=body, headers=headers) as response:
             if response.status != 200:
                 resp_text: str = await response.text()
-                logger.warning("[QQBot] Send failed (status=%d): %s", response.status, resp_text[:200])
+                logger.warning(f"[QQBot] Send failed (status={response.status}): {resp_text[:200]}")
 
     # ==================================================================
     # 事件派发
@@ -645,8 +638,7 @@ class QQWebSocketClient:
             )
             self._heartbeat_interval = interval_ms / 1000.0 * 0.8
             logger.debug(
-                "[QQBot] Hello received, heartbeat_interval=%dms",
-                interval_ms,
+                f"[QQBot] Hello received, heartbeat_interval={interval_ms}ms"
             )
 
             # 鉴权：有 session 则 Resume，否则 Identify
@@ -662,7 +654,7 @@ class QQWebSocketClient:
                 session_id_obj: object = data.get("session_id")
                 if isinstance(session_id_obj, str):
                     self._session_id = session_id_obj
-                logger.info("[QQBot] Ready, session_id=%s", self._session_id)
+                logger.info(f"[QQBot] Ready, session_id={self._session_id}")
 
             elif event_type == "RESUMED":
                 logger.info("[QQBot] Session resumed")
@@ -748,8 +740,7 @@ class QQWebSocketClient:
         if self._ws is not None and not self._ws.closed:
             await self._ws.send_json(payload)
             logger.info(
-                "[QQBot] Resume sent (session_id=%s, seq=%s)",
-                self._session_id, self._last_seq,
+                f"[QQBot] Resume sent (session_id={self._session_id}, seq={self._last_seq})"
             )
         else:
             logger.warning("[QQBot] Cannot resume: WebSocket not connected")
@@ -779,7 +770,7 @@ class QQWebSocketClient:
         # 消息去重
         async with self._dedup_lock:
             if msg_id in self._seen_msg_ids:
-                logger.debug("[QQBot] Duplicate message: %s", msg_id)
+                logger.debug(f"[QQBot] Duplicate message: {msg_id}")
                 return
             self._seen_msg_ids.add(msg_id)
             # 限制去重集合大小
@@ -860,9 +851,7 @@ class QQWebSocketClient:
             try:
                 await self.on_message(msg)
             except Exception as exc:
-                logger.error(
-                    "[QQBot] Message callback error: %s", exc, exc_info=True
-                )
+                logger.exception("[QQBot] Message callback error")
 
     async def _on_interaction(self, data: dict[str, object]) -> None:
         """处理按钮交互事件（INTERACTION_CREATE）。
@@ -917,7 +906,7 @@ class QQWebSocketClient:
             try:
                 await self.on_interaction(event)
             except Exception as exc:
-                logger.error("[QQBot] Interaction callback error: %s", exc, exc_info=True)
+                logger.exception("[QQBot] Interaction callback error")
 
     # ==================================================================
     # 工具方法
@@ -936,7 +925,7 @@ class QQWebSocketClient:
         try:
             data: dict[str, object] = json.loads(raw_data)
         except json.JSONDecodeError as exc:
-            logger.warning("[QQBot] Failed to parse JSON: %s", exc)
+            logger.warning(f"[QQBot] Failed to parse JSON: {exc}")
             return None
 
         op_obj: object = data.get("op", 0)

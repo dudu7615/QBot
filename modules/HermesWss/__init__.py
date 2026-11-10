@@ -8,9 +8,10 @@ HermesWss — QQ Bot WebSocket 客户端模块。
 
 使用方式：
     from modules.HermesWss import QQWebSocketClient, QQMessageSender
+    from modules.Logger import logger
 
     async def on_message(msg: QQMessage) -> None:
-        print(f"收到消息: {msg.content}")
+        logger.info(f"收到消息: {msg.content}")
 
     client = QQWebSocketClient("app_id", "client_secret", on_message=on_message)
     await client.start()
