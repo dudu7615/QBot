@@ -570,47 +570,6 @@ class QQWebSocketClient:
     # 消息处理
     # ==================================================================
 
-    async def send_text(
-        self,
-        text: str,
-        channel_type: str = "c2c",
-        chat_id: str = "",
-    ) -> None:
-        """发送文字消息到 QQ（通过 REST API）。
-
-        注意：此方法使用 aiohttp 的 HTTP 客户端，
-        调用前请确保 start() 已成功执行。
-
-        Args:
-            text: 消息文本。
-            channel_type: 频道类型（"c2c" 或 "group"）。
-            chat_id: 目标 ID（user_openid 或 group_openid）。
-        """
-        token: str = await self._ensure_token()
-        if self._http_client is None:
-            logger.error("[QQBot] Cannot send: HTTP client not initialized")
-            return
-
-        endpoint: str = (
-            f"/v2/users/{chat_id}/messages"
-            if channel_type == "c2c"
-            else f"/v2/groups/{chat_id}/messages"
-        )
-        url: str = f"{API_BASE}{endpoint}"
-        headers: dict[str, str] = {
-            "Authorization": f"QQBot {token}",
-            "Content-Type": "application/json",
-        }
-        body: dict[str, object] = {
-            "content": text,
-            "msg_type": 0,
-        }
-
-        async with self._http_client.post(url, json=body, headers=headers) as response:
-            if response.status != 200:
-                resp_text: str = await response.text()
-                logger.warning(f"[QQBot] Send failed (status={response.status}): {resp_text[:200]}")
-
     # ==================================================================
     # 事件派发
     # ==================================================================
