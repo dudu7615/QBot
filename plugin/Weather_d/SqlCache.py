@@ -63,9 +63,17 @@ class User(_Model, table=True):
 
     @staticmethod
     def add(openId: str, location: str) -> None:
+        """新增或更新用户的常住地。
+
+        使用 merge 处理主键已存在的情况，避免重复设置时抛出 IntegrityError。
+
+        Args:
+            openId: 用户的 openid。
+            location: 城市名。
+        """
         with Session(_engine) as session:
             user = User(openId=openId, location=location)
-            session.add(user)
+            session.merge(user)
             session.commit()
 
     @staticmethod
