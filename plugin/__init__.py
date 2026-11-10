@@ -1,4 +1,5 @@
-from .PluginBase import PluginBase, PluginMeta, MessageType, MessageData
+from .PluginBase import PluginBase, PluginMeta
+from modules.Types import MessageType, MessageData
 from .TestPlugin import TestPlugin
 from .TestAutoReply import TestAutoReply
 from .AiChat import AiChat

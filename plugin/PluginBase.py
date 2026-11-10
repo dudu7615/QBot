@@ -8,15 +8,26 @@ from modules.Types import MessageType, MessageData
 
 
 class PluginMeta(ABCMeta):
-    plugins: list["PluginBase"] = []  # 存储所有插件实例的字典
+    """插件元类：类定义时自动实例化并注册。
 
-    def __new__(cls, name: str, bases: tuple[type], namespace: dict[str, Any]) -> type:
-        # 创建类
-        new_class = super().__new__(cls, name, bases, namespace)
+    Attributes:
+        plugins: 已注册的插件实例，顺序即分发优先级。
+    """
 
-        # 如果不是基类，则实例化并存储插件
-        if namespace["usable"]:
-            plugin_instance = new_class()
+    plugins: list["PluginBase"] = []
+
+    def __new__(
+        cls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
+    ) -> type:
+        new_class = super().__new__(cls, name, bases, namespace, **kwargs)
+
+        # 未显式声明 usable 的类按不可用处理，而不是直接 KeyError
+        if namespace.get("usable", False):
+            plugin_instance: PluginBase = new_class()
             cls.plugins.append(plugin_instance)
             logger.info(f"注册插件: {plugin_instance.pluginName}")
         return new_class
