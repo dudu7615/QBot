@@ -10,6 +10,7 @@ HermesWss — QQ Bot REST API 消息发送器。
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import uuid
 from typing import Optional
@@ -30,6 +31,27 @@ from .utils import get_api_headers
 
 
 logger = logging.getLogger(__name__)
+
+
+# 同一进程内单调递增的消息序号，QQ 用它区分同一事件下的多条回复
+_msg_seq_counter: itertools.count[int] = itertools.count(1)
+
+
+def _next_msg_seq() -> int:
+    """返回下一个 msg_seq（1~65535 循环）。"""
+    return next(_msg_seq_counter) % 65535 + 1
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    """判断 API 状态码是否值得重试。
+
+    Args:
+        status_code: HTTP 状态码。
+
+    Returns:
+        5xx 与 429（限流）可重试，其余视为永久错误。
+    """
+    return status_code == 0 or status_code == 429 or status_code >= 500
 
 
 class QQMessageSender:
@@ -141,17 +163,10 @@ class QQMessageSender:
         Returns:
             可用于 API 请求的消息体字典。
         """
-        # 生成消息序列号（防重放 + 回复链标识）
-        import time as _time
-        import uuid as _uuid
-        time_part: int = int(_time.time()) % 100000000
-        rand_part: int = int(_uuid.uuid4().hex[:4], 16)
-        msg_seq: int = (time_part ^ rand_part) % 65536
-
         body: dict[str, object] = {
             "content": content,
             "msg_type": MSG_TYPE_TEXT,
-            "msg_seq": msg_seq,
+            "msg_seq": _next_msg_seq(),
         }
         if reply_to is not None:
             body["msg_id"] = reply_to
@@ -534,31 +549,33 @@ class QQMessageSender:
             发送结果（SendResult）。
         """
         last_error: str = ""
+        retryable: bool = False
 
         for attempt in range(max_retries):
             try:
                 token: str = await self._token_manager.get_token()
                 data: dict[str, object] = await self._api_request(method, path, body, token)
-                msg_id: str = str(data.get("id", uuid.uuid4().hex[:12]))
+                response_id: object = data.get("id")
                 return SendResult(
                     success=True,
-                    message_id=msg_id,
+                    message_id=response_id if isinstance(response_id, str) else "",
                     raw_response=data,
                 )
-            except (QQApiError, QQTokenError) as exc:
-                error_str: str = str(exc).lower()
+            except QQApiError as exc:
                 last_error = str(exc)
+                retryable = _is_retryable_status(exc.status_code)
+                if not retryable:
+                    return SendResult(success=False, error=last_error, retryable=False)
+            except QQTokenError as exc:
+                last_error = str(exc)
+                retryable = True
 
-                # 永久性错误不重试
-                if any(k in error_str for k in ("invalid", "forbidden", "not found", "bad request")):
-                    return SendResult(success=False, error=str(exc), retryable=False)
+            if attempt < max_retries - 1:
+                delay: float = 1.0 * (2.0 ** attempt)
+                logger.warning(
+                    "Send retry %d/%d after %.1fs: %s",
+                    attempt + 1, max_retries, delay, last_error,
+                )
+                await asyncio.sleep(delay)
 
-                if attempt < max_retries - 1:
-                    delay: float = 1.0 * (2.0 ** attempt)
-                    logger.warning(
-                        "Send retry %d/%d after %.1fs: %s",
-                        attempt + 1, max_retries, delay, exc,
-                    )
-                    await asyncio.sleep(delay)
-
-        return SendResult(success=False, error=last_error, retryable=True)
+        return SendResult(success=False, error=last_error, retryable=retryable)
