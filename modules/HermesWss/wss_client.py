@@ -33,8 +33,10 @@ from .constants import (
     GATEWAY_URL_PATH,
     MAX_RECONNECT_ATTEMPTS,
     QUICK_DISCONNECT_THRESHOLD,
+    MAX_CONCURRENT_HANDLERS,
     MAX_QUICK_DISCONNECT_COUNT,
     RATE_LIMIT_DELAY,
+    SHUTDOWN_GRACE_SECONDS,
     RECONNECT_BACKOFF,
     TOKEN_URL,
     WSOpCode,
@@ -121,6 +123,12 @@ class QQWebSocketClient:
         # 不可恢复的断开时置位，供上层感知客户端已停止
         self.stopped: asyncio.Event = asyncio.Event()
 
+        # 消息处理任务：回调放入独立任务执行，避免阻塞读循环
+        self._dispatch_tasks: set[asyncio.Task[None]] = set()
+        self._dispatch_semaphore: asyncio.Semaphore = asyncio.Semaphore(
+            MAX_CONCURRENT_HANDLERS
+        )
+
     # ==================================================================
     # 主生命周期
     # ==================================================================
@@ -165,6 +173,22 @@ class QQWebSocketClient:
     async def stop(self) -> None:
         """停止客户端，断开所有连接。"""
         self.running = False
+
+        # 等待进行中的消息处理结束，超时后取消
+        if self._dispatch_tasks:
+            pending: set[asyncio.Task[None]] = set(self._dispatch_tasks)
+            done, still_pending = await asyncio.wait(
+                pending, timeout=SHUTDOWN_GRACE_SECONDS
+            )
+            for task in still_pending:
+                task.cancel()
+            if still_pending:
+                await asyncio.gather(*still_pending, return_exceptions=True)
+            logger.info(
+                "[QQBot] Dispatch drained: %d done, %d cancelled",
+                len(done),
+                len(still_pending),
+            )
 
         if self._listen_task is not None:
             self._listen_task.cancel()
@@ -817,12 +841,28 @@ class QQWebSocketClient:
                 if msg.author is not None:
                     msg.author.member_openid = member_openid
 
-        # 触发回调
+        # 触发回调：放入独立任务，避免慢插件阻塞读循环与心跳
         if self.on_message is not None:
+            task: asyncio.Task[None] = asyncio.create_task(
+                self._dispatch_message(msg)
+            )
+            self._dispatch_tasks.add(task)
+            task.add_done_callback(self._dispatch_tasks.discard)
+
+    async def _dispatch_message(self, msg: QQMessage) -> None:
+        """处理一条消息，异常只记录不向外抛。
+
+        Args:
+            msg: 收到的消息。
+        """
+        assert self.on_message is not None
+        async with self._dispatch_semaphore:
             try:
                 await self.on_message(msg)
             except Exception as exc:
-                logger.error("[QQBot] Message callback error: %s", exc, exc_info=True)
+                logger.error(
+                    "[QQBot] Message callback error: %s", exc, exc_info=True
+                )
 
     async def _on_interaction(self, data: dict[str, object]) -> None:
         """处理按钮交互事件（INTERACTION_CREATE）。
