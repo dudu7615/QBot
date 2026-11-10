@@ -18,7 +18,6 @@ from .models import (
     KeyboardButtonPermission,
     ApprovalRequest,
     InteractionEvent,
-    PostMessageFn,
 )
 from modules.Logger import logger
 

@@ -16,17 +16,15 @@ from typing import Optional
 
 import httpx
 
-from .constants import API_BASE, DEFAULT_API_TIMEOUT, MEDIA_TYPE_IMAGE, MEDIA_TYPE_VOICE, MEDIA_TYPE_VIDEO, MEDIA_TYPE_FILE, MSG_TYPE_TEXT, MSG_TYPE_MARKDOWN, MSG_TYPE_MEDIA, MSG_TYPE_INPUT_NOTIFY, MAX_MESSAGE_LENGTH
+from .constants import API_BASE, DEFAULT_API_TIMEOUT, MEDIA_TYPE_IMAGE, MEDIA_TYPE_VOICE, MEDIA_TYPE_VIDEO, MEDIA_TYPE_FILE, MSG_TYPE_TEXT, MSG_TYPE_MEDIA, MSG_TYPE_INPUT_NOTIFY, MAX_MESSAGE_LENGTH
 from .exceptions import QQApiError, QQTokenError
-from .keyboards import build_approval_keyboard, build_approval_text, build_update_prompt_keyboard
+from .keyboards import build_approval_keyboard, build_approval_text
 from .models import (
     ApprovalRequest,
     InlineKeyboard,
     SendResult,
-    AccessTokenData,
 )
 from .token_manager import TokenManager
-from .utils import get_api_headers
 
 from modules.Logger import logger
 

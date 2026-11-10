@@ -58,7 +58,6 @@ from .keyboards import (
     parse_update_prompt_button_data,
 )
 from .models import (
-    AccessTokenData,
     ApprovalRequest,
     BindResult,
     BindStatusEnum,
@@ -87,7 +86,7 @@ from .models import (
 from .onboard import build_connect_url, qr_register
 from .sender import QQMessageSender
 from .token_manager import TokenManager
-from .utils import build_user_agent, coerce_list, get_api_headers
+from .utils import build_user_agent, get_api_headers
 from .wss_client import QQWebSocketClient
 
 __all__ = [
@@ -117,7 +116,6 @@ __all__ = [
     "QQMessage",
     "QQMessageAuthor",
     "SendResult",
-    "AccessTokenData",
     "TokenResponse",
     "GatewayResponse",
     "WSPayload",
@@ -154,7 +152,6 @@ __all__ = [
     # 工具
     "build_user_agent",
     "get_api_headers",
-    "coerce_list",
     # 异常
     "HermesWssError",
     "QQCloseError",
