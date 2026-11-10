@@ -1,1 +1,0 @@
-INSERT INTO users (open_id, name) VALUES (:open_id, :name);
