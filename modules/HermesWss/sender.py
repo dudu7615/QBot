@@ -298,13 +298,17 @@ class QQMessageSender:
         """
         results: list[SendResult] = []
 
-        async def _do_send(text: str, reply: str | None) -> SendResult:
+        async def _do_send(
+            text: str,
+            reply: str | None,
+            event: str | None,
+        ) -> SendResult:
             if is_group:
-                return await self.send_text_to_group(chat_id, text, reply, event_id=event_id)
-            return await self.send_text_to_c2c(chat_id, text, reply, event_id=event_id)
+                return await self.send_text_to_group(chat_id, text, reply, event_id=event)
+            return await self.send_text_to_c2c(chat_id, text, reply, event_id=event)
 
         if len(content) <= MAX_MESSAGE_LENGTH:
-            result: SendResult = await _do_send(content, reply_to)
+            result: SendResult = await _do_send(content, reply_to, event_id)
             results.append(result)
             return results
 
@@ -312,7 +316,12 @@ class QQMessageSender:
         is_first: bool = True
         while chunk_start < len(content):
             chunk: str = content[chunk_start:chunk_start + MAX_MESSAGE_LENGTH]
-            result = await _do_send(chunk, reply_to if is_first else None)
+            # 被动回复的 event_id 与 reply_to 一样只在第一片携带
+            result = await _do_send(
+                chunk,
+                reply_to if is_first else None,
+                event_id if is_first else None,
+            )
             results.append(result)
             chunk_start += MAX_MESSAGE_LENGTH
             is_first = False
