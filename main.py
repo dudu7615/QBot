@@ -15,7 +15,6 @@ QBot — QQ Bot 主入口。
 from __future__ import annotations
 
 import asyncio
-import sys
 
 from modules.Config import config
 from modules.Logger import logger
@@ -58,9 +57,17 @@ class MainServer:
         success: bool = await self.client.start()
         if not success:
             logger.error("WebSocket 客户端启动失败")
-            sys.exit(1)
+            raise RuntimeError("WebSocket 客户端启动失败")
 
         logger.info("WebSocket 客户端启动成功, 等待消息...")
+
+    async def wait_closed(self) -> None:
+        """等待客户端不可恢复地停止。
+
+        客户端放弃重连时置位 stopped 事件，避免进程带着失效连接挂死。
+        """
+        if self.client is not None:
+            await self.client.stopped.wait()
 
     async def stop(self) -> None:
         """停止 HermesWss WebSocket 客户端。"""
@@ -207,15 +214,23 @@ server = MainServer()
 
 async def main() -> None:
     """异步主入口。"""
-    await server.start()
-
-    # 保持运行，直到收到中断信号
+    exit_code: int = 0
     try:
-        await asyncio.Future()  # 永久等待
-    except KeyboardInterrupt:
+        await server.start()
+        # 保持运行，直到客户端放弃重连或收到 Ctrl+C
+        await server.wait_closed()
+        logger.warning("WebSocket 客户端已停止，进程退出")
+        exit_code = 1
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("收到中断信号")
+    except Exception as exc:
+        logger.error(f"启动失败: {exc}")
+        exit_code = 1
     finally:
         await server.stop()
+
+    if exit_code != 0:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

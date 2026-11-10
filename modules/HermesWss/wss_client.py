@@ -118,6 +118,9 @@ class QQWebSocketClient:
         self._seen_msg_ids: set[str] = set()
         self._dedup_lock: asyncio.Lock = asyncio.Lock()
 
+        # 不可恢复的断开时置位，供上层感知客户端已停止
+        self.stopped: asyncio.Event = asyncio.Event()
+
     # ==================================================================
     # 主生命周期
     # ==================================================================
@@ -389,6 +392,7 @@ class QQWebSocketClient:
                             "[QQBot] Too many quick disconnects. "
                             "Check: 1) AppID/Secret 2) Bot permissions on QQ Open Platform"
                         )
+                        self._mark_stopped()
                         return
                 else:
                     quick_disconnect_count = 0
@@ -402,6 +406,7 @@ class QQWebSocketClient:
                                 "[QQBot] %s. Stop reconnecting.",
                                 close_code.description,
                             )
+                            self._mark_stopped()
                             return
                         if close_code == WSCloseCode.AUTHENTICATION_FAILED:
                             # 4004: token 无效，清除 token 缓存
@@ -437,6 +442,7 @@ class QQWebSocketClient:
                     backoff_idx += 1
                     if backoff_idx >= MAX_RECONNECT_ATTEMPTS:
                         logger.error("[QQBot] Max reconnect attempts reached")
+                        self._mark_stopped()
                         return
 
             except Exception as exc:
@@ -446,6 +452,7 @@ class QQWebSocketClient:
 
                 if backoff_idx >= MAX_RECONNECT_ATTEMPTS:
                     logger.error("[QQBot] Max reconnect attempts reached")
+                    self._mark_stopped()
                     return
 
                 if await self._reconnect(backoff_idx):
@@ -453,6 +460,11 @@ class QQWebSocketClient:
                     quick_disconnect_count = 0
                 else:
                     backoff_idx += 1
+
+    def _mark_stopped(self) -> None:
+        """标记客户端已不可恢复地停止，并唤醒等待方。"""
+        self.running = False
+        self.stopped.set()
 
     async def _reconnect(self, backoff_idx: int) -> bool:
         """尝试重连 WebSocket。
