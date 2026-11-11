@@ -232,8 +232,8 @@ class QQMessageSender:
         Args:
             openid: 用户的 openid。
             content: 消息文本（自动按 4000 字符分片）。
-            reply_to: 回复的消息 ID（仅第一片携带）。
-            event_id: 网关事件 ID（仅第一片携带）。
+            reply_to: 回复的消息 ID（每片都携带，靠 msg_seq 区分）。
+            event_id: 网关事件 ID（每片都携带，保持被动回复语义）。
 
         Returns:
             每片的发送结果列表。
@@ -258,8 +258,8 @@ class QQMessageSender:
         Args:
             group_openid: 群的 openid。
             content: 消息文本（自动按 4000 字符分片）。
-            reply_to: 回复的消息 ID（仅第一片携带）。
-            event_id: 网关事件 ID（仅第一片携带）。
+            reply_to: 回复的消息 ID（每片都携带，靠 msg_seq 区分）。
+            event_id: 网关事件 ID（每片都携带，保持被动回复语义）。
 
         Returns:
             每片的发送结果列表。
@@ -285,9 +285,9 @@ class QQMessageSender:
         Args:
             chat_id: 聊天对象 ID。
             content: 消息文本。
-            reply_to: 初始回复的消息 ID。
+            reply_to: 回复的消息 ID，每片都携带。
             is_group: 是否为群聊消息。
-            event_id: 网关事件 ID（仅第一片携带）。
+            event_id: 网关事件 ID，每片都携带。
 
         Returns:
             每片的发送结果列表。
@@ -309,18 +309,14 @@ class QQMessageSender:
             return results
 
         chunk_start: int = 0
-        is_first: bool = True
         while chunk_start < len(content):
             chunk: str = content[chunk_start:chunk_start + MAX_MESSAGE_LENGTH]
-            # 被动回复的 event_id 与 reply_to 一样只在第一片携带
-            result = await _do_send(
-                chunk,
-                reply_to if is_first else None,
-                event_id if is_first else None,
-            )
+            # 每一片都必须保留被动回复上下文：不带 msg_id/event_id 的消息
+            # 会被 QQ 当作主动推送，而主动推送不可用。各片靠各自递增的
+            # msg_seq 区分，属于同一 msg_id 下的不同回复。
+            result = await _do_send(chunk, reply_to, event_id)
             results.append(result)
             chunk_start += MAX_MESSAGE_LENGTH
-            is_first = False
 
         return results
 
