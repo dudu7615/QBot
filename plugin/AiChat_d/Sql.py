@@ -223,6 +223,32 @@ class Message(_Model, table=True):
         User.touch(openId, 0)
 
     @staticmethod
+    def truncateToIds(openId: str, keep_ids: set[int]) -> None:
+        """只保留指定 id 的非 system 消息，其余删除。
+
+        Args:
+            openId: 用户 openid。
+            keep_ids: 需要保留的消息 id 集合（不含 system prompt）。
+        """
+        with Session(_engine) as session:
+            statement = (
+                select(Message)
+                .where(Message.openId == openId)
+                .where(Message.role != MessageRole.system)
+            )
+            for message in session.exec(statement):
+                if message.id is not None and message.id not in keep_ids:
+                    session.delete(message)
+
+            try:
+                session.commit()
+            except Exception as exc:
+                logger.error(f"截断历史失败 openId={openId}: {exc}")
+                session.rollback()
+
+        Message._refresh_user_activity(openId)
+
+    @staticmethod
     def truncateTo(openId: str, keep_count: int) -> None:
         """保留最近 keep_count 条消息，删除更早的。
 

@@ -60,8 +60,11 @@ class PersonHistory:
     def _truncate(self, messages: list[Message]) -> list[Message]:
         """裁剪上下文并同步数据库。
 
+        按完整的用户/助手轮次裁剪：保留的片段必须从一条 user 消息开始，
+        否则会留下没有对应提问的孤立回复，污染后续上下文。
+
         Args:
-            messages: 按时间升序排列的全部消息。
+            messages: 按时间升序排列的全部消息，第一项为 system prompt。
 
         Returns:
             裁剪后的消息列表，第一项为 system prompt。
@@ -69,7 +72,15 @@ class PersonHistory:
         system_prompt: Message = messages[0]
         keep_recent: int = max(config.keep_recent - 1, 0)
         recent: list[Message] = messages[-keep_recent:] if keep_recent else []
-        Message.truncateTo(self.openId, config.keep_recent)
+
+        # 丢弃开头不属于 user 的消息，保证从一轮对话的提问开始
+        while recent and recent[0].role != MessageRole.user:
+            recent = recent[1:]
+
+        keep_ids: set[int] = {
+            item.id for item in recent if item.id is not None
+        }
+        Message.truncateToIds(self.openId, keep_ids)
         return [system_prompt] + recent
 
     def clearHistory(self) -> None:
