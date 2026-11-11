@@ -1,3 +1,5 @@
+from time import monotonic
+
 from modules.Logger import logger
 from modules.Types import MessageData, MessageType
 from modules import HttpSender
@@ -8,9 +10,32 @@ from plugin.AiChat_d.RequApi import request_reply
 _CLEAR_COMMANDS = {"clear"}
 _COMMAND_PREFIXES = ("!", "！")
 
+# 群聊未 @ 机器人时，两次自动回复之间的最小间隔（秒）。
+# 群消息量远大于私聊，全部交给 LLM 会打爆上游配额。
+GROUP_REPLY_COOLDOWN_SECONDS: float = 30.0
+
 
 class AiChat(PluginBase):
     usable = True
+
+    def __init__(self) -> None:
+        self._last_group_reply: dict[str, float] = {}
+
+    def _allow_group_reply(self, group_openid: str) -> bool:
+        """判断群聊里是否可以再自动回复一次。
+
+        Args:
+            group_openid: 群 openid。
+
+        Returns:
+            距上次自动回复超过冷却时间时为 True。
+        """
+        now: float = monotonic()
+        last: float | None = self._last_group_reply.get(group_openid)
+        if last is not None and now - last < GROUP_REPLY_COOLDOWN_SECONDS:
+            return False
+        self._last_group_reply[group_openid] = now
+        return True
 
     @property
     def messageType(
@@ -65,6 +90,13 @@ class AiChat(PluginBase):
             else:
                 logger.warning(f"未知命令: {command}")
                 await self._reply("使用 “!clear” 清空历史记录", message)
+            return
+
+        # 群聊里只有被 @ 才必定回复，普通群消息按冷却时间限流
+        if message.t == "GROUP_MESSAGE_CREATE" and not self._allow_group_reply(
+            message.d.group_openid
+        ):
+            logger.debug(f"群聊自动回复冷却中，跳过: {message.d.group_openid[:12]}")
             return
 
         reply: str = await request_reply(content, session_id)
