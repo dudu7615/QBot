@@ -93,12 +93,17 @@ def refresh_cache(year: int | None = None) -> bool:
     return True
 
 
-def ensure_cache_fresh() -> None:
+def ensure_cache_fresh() -> bool:
     """确保持久化缓存覆盖当前年份。
 
     缓存缺失或未覆盖当前年份时触发一次刷新。
+
+    Returns:
+        缓存已覆盖当前年份时为 True；刷新失败时返回 False，
+        调用方应据此决定是否在下次请求时重试。
     """
     today: date = date.today()
     cached: datetime | None = Cache.getCachedYear()
-    if cached is None or cached.year != today.year:
-        refresh_cache(today.year)
+    if cached is not None and cached.year == today.year:
+        return True
+    return refresh_cache(today.year)
