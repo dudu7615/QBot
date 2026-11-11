@@ -170,9 +170,9 @@ class ChunkedUploader:
         result: UploadCompleteResponse = await self._complete_upload(
             chat_id, chat_type, prepare.upload_id,
         )
+        # file_info 是可复用的富媒体 token，不写入持久化日志
         logger.info(
-            f"Upload complete: {file_name} ({file_size} bytes) "
-            f"→ file_info={result.file_info}"
+            f"Upload complete: {file_name} ({file_size} bytes) → file_info 已获取"
         )
         return result
 
