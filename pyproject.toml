@@ -35,6 +35,12 @@ disallow_any_expr = false
 disallow_any_decorated = false
 disallow_any_explicit = false
 
+# 历史调试脚本：webhook 验证、抓包服务器、早期 SQLModel 原型，
+# 依赖 fastapi/requests 且不属于主程序运行路径
+[[tool.mypy.overrides]]
+module = ["test.*", "temp.*"]
+ignore_errors = true
+
 # HermesWss 模块 mypy 配置：保持 strict；
 # aiohttp / httpx 未提供类型存根，disallow_any_* 无法在同一条严格度下满足，
 # 因此这里不开启，改由 strict 覆盖其余检查项。
