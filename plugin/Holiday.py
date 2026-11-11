@@ -42,8 +42,10 @@ class Holiday(PluginBase):
             self._checked = refreshed
 
         today: date = date.today()
-        next_holiday = Cache.getNextHoliday(today)
-        next_de_holiday = Cache.getNextDeHoliday(today)
+        # SQLite 读取放到线程池，避免阻塞事件循环
+        next_holiday, next_de_holiday = await asyncio.to_thread(
+            lambda: (Cache.getNextHoliday(today), Cache.getNextDeHoliday(today))
+        )
 
         if next_holiday is None:
             reply = "没有找到下一个假期"
