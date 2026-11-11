@@ -57,9 +57,9 @@ def _fetch_year(year: int) -> list[tuple[str, datetime, bool]]:
     last_error: str = ""
     for _ in range(_MAX_ATTEMPTS):
         try:
+            # 接口的年份在路径里，不是查询参数
             response: httpx.Response = httpx.get(
-                HOLIDAY_YEAR_URL,
-                params={"year": year},
+                f"{HOLIDAY_YEAR_URL}/{year}/",
                 timeout=_REQUEST_TIMEOUT,
             )
             if response.status_code != 200:
@@ -73,7 +73,7 @@ def _fetch_year(year: int) -> list[tuple[str, datetime, bool]]:
                 last_error = f"code={parsed.code}"
                 continue
 
-            return [
+            records = [
                 (
                     entry.name,
                     datetime(entry.date.year, entry.date.month, entry.date.day),
@@ -81,6 +81,11 @@ def _fetch_year(year: int) -> list[tuple[str, datetime, bool]]:
                 )
                 for entry in parsed.holiday.values()
             ]
+            # 接口可能忽略年份参数而返回当前年数据，写入前必须核对
+            if any(day.year != year for _, day, _ in records):
+                last_error = "响应年份与请求年份不一致"
+                continue
+            return records
         except (ValidationError, ValueError) as exc:
             last_error = f"响应结构异常: {exc}"
         except Exception as exc:
@@ -106,6 +111,11 @@ def refresh_cache(year: int | None = None) -> bool:
         records: list[tuple[str, datetime, bool]] = _fetch_year(target_year)
     except RuntimeError as exc:
         logger.error(str(exc))
+        return False
+
+    if not records:
+        # 空数据不代表「这一年没有假期」，保留已有缓存而不是整体替换成空
+        logger.error(f"{target_year} 年节假日数据为空，保留现有缓存")
         return False
 
     year_start: datetime = datetime(target_year, 1, 1)
