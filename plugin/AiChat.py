@@ -54,16 +54,21 @@ class AiChat(PluginBase):
     def _session_id(message: MessageData) -> str:
         """返回会话标识。
 
-        优先使用 union_openid，缺失时回退到 author.id。
+        私聊与群聊分别使用独立的命名空间：同一个人的 union_openid 在两种
+        场景下相同，直接用它做键会让群里的请求读到私聊内容，并把私聊
+        内容回复到群里。
 
         Args:
             message: 收到的消息。
 
         Returns:
-            会话标识。
+            会话标识，形如 ``c2c:<openid>`` 或 ``group:<group_openid>:<openid>``。
         """
         author = message.d.author
-        return author.union_openid or author.id
+        identity: str = author.union_openid or author.id
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            return f"group:{message.d.group_openid}:{identity}"
+        return f"c2c:{identity}"
 
     async def _reply(self, text: str, message: MessageData) -> None:
         """按消息来源回复文本。
