@@ -25,11 +25,11 @@ class WeatherConfig(BaseModel):
     """心知天气配置。
 
     Attributes:
-        pubKey: 公钥。
+        pubKey: 公钥，仅用于控制台展示，运行时可缺省。
         privKey: 私钥（请求用）。
     """
 
-    pubKey: str
+    pubKey: str = ""
     privKey: str
 
 
