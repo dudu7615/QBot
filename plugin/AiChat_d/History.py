@@ -1,7 +1,6 @@
 from plugin.AiChat_d import Paths
 from plugin.AiChat_d.Config import config
 from plugin.AiChat_d.Sql import Message, MessageRole, User
-from plugin.AiChat_d.Types import ChatMessage
 
 
 class PersonHistory:
@@ -31,16 +30,6 @@ class PersonHistory:
         personality_file = Paths.PERSONALITY / f"{config.personality}"
         with open(personality_file, "r", encoding="utf-8") as file:
             Message.addMessage(self.openId, file.read(), MessageRole.system)
-
-    def addHistory(self, message: ChatMessage) -> None:
-        """追加一条对话消息。
-
-        Args:
-            message: 对话消息。
-        """
-        Message.addMessage(
-            self.openId, message.content, MessageRole(message.role)
-        )
 
     def getHistory(self) -> list[dict[str, str]]:
         """返回可直接放入 API 请求的历史消息。
