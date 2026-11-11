@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 import yaml  # type: ignore[import-untyped]
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from modules.Logger import logger
 from plugin.Weather_d.SqlCache import Cache, WeatherType
@@ -28,6 +28,9 @@ class WeatherConfig(BaseModel):
         pubKey: 公钥，仅用于控制台展示，运行时可缺省。
         privKey: 私钥（请求用）。
     """
+
+    # 校验失败时不要把整份配置（含私钥）写进异常信息
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     pubKey: str = ""
     privKey: str
@@ -66,14 +69,14 @@ class WeatherLocation(BaseModel):
 class WeatherNow(BaseModel):
     """实时天气。"""
 
-    text: str = ""
-    temperature: str = ""
+    text: str
+    temperature: str
 
 
 class WeatherDay(BaseModel):
     """单日预报。"""
 
-    date: str = ""
+    date: str
     text_day: str = ""
     low: str = ""
     high: str = ""
@@ -200,6 +203,10 @@ async def getTodayWeather(cityName: str) -> str:
         return "获取天气信息失败"
 
     result: WeatherNowResult = parsed.results[0]
+    if not result.now.text or not result.now.temperature:
+        logger.error(f"实时天气缺少必要字段: {cityName}")
+        return "获取天气信息失败"
+
     detail: str = (
         f"城市: {result.location.path or cityName}\n"
         f"天气: {result.now.text} {result.now.temperature}℃\n"
@@ -246,6 +253,10 @@ async def getFutureWeather(cityName: str) -> str:
         return "获取天气信息失败"
 
     forecast: WeatherDailyResult = parsed.results[0]
+    if not forecast.daily:
+        logger.error(f"天气预报没有可用的日数据: {cityName}")
+        return "获取天气信息失败"
+
     lines: list[str] = [f"城市: {forecast.location.path or cityName}"]
     for day in forecast.daily:
         lines.append(
