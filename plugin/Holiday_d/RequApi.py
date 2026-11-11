@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Any
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, StrictInt
 from sqlmodel import Session, delete
 
 from modules.Logger import logger
@@ -10,6 +10,36 @@ from plugin.Holiday_d.SqlCache import Cache, _engine
 HOLIDAY_YEAR_URL = "https://timor.tech/api/holiday/year"
 _REQUEST_TIMEOUT = 10.0
 _MAX_ATTEMPTS = 3
+
+
+class HolidayEntry(BaseModel):
+    """接口返回的单条假期记录。
+
+    Attributes:
+        name: 假期名称。
+        date: 日期（YYYY-MM-DD）。
+        holiday: 是否为假期；False 表示调休补班。
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    name: str
+    date: date
+    holiday: bool
+
+
+class HolidayYearResponse(BaseModel):
+    """``/api/holiday/year`` 的响应体。
+
+    Attributes:
+        code: 业务状态码，0 表示成功。
+        holiday: 日期字符串到假期记录的映射。
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    code: StrictInt
+    holiday: dict[str, HolidayEntry] = Field(default_factory=dict)
 
 
 def _fetch_year(year: int) -> list[tuple[str, datetime, bool]]:
@@ -36,22 +66,23 @@ def _fetch_year(year: int) -> list[tuple[str, datetime, bool]]:
                 last_error = f"HTTP {response.status_code}"
                 continue
 
-            payload: dict[str, Any] = response.json()
-            if payload.get("code") != 0:
-                last_error = f"code={payload.get('code')}"
+            parsed: HolidayYearResponse = HolidayYearResponse.model_validate_json(
+                response.content
+            )
+            if parsed.code != 0:
+                last_error = f"code={parsed.code}"
                 continue
 
-            holidays: dict[str, Any] = payload.get("holiday") or {}
-            records: list[tuple[str, datetime, bool]] = []
-            for item in holidays.values():
-                records.append(
-                    (
-                        str(item["name"]),
-                        datetime.strptime(str(item["date"]), "%Y-%m-%d"),
-                        bool(item["holiday"]),
-                    )
+            return [
+                (
+                    entry.name,
+                    datetime(entry.date.year, entry.date.month, entry.date.day),
+                    entry.holiday,
                 )
-            return records
+                for entry in parsed.holiday.values()
+            ]
+        except (ValidationError, ValueError) as exc:
+            last_error = f"响应结构异常: {exc}"
         except Exception as exc:
             last_error = str(exc)
 
