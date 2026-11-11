@@ -20,6 +20,7 @@ This project uses `uv` as the package manager — always use `uv` instead of `pi
 3. use `loguru` for logging output, do not use `print` or `logging`.
 4. EVERY code MUST pass `uv run mypy . --explicit-package-bases`（strict），非必要不要用 `Any`。
 5. 数据类型统一用 `pydantic`（配置、消息、请求/响应模型），不要用 TypedDict。
+6. 每做一件事，commit一次，要有清晰的 -m 以及说明。
 
 ## Project Architecture
 
