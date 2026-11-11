@@ -139,6 +139,12 @@ async def _request_and_store(message: str, open_id: str) -> str:
                 logger.warning(
                     f"AI 接口返回 {response.status_code}: {response.text[:200]}"
                 )
+                # 4xx 是配置/鉴权/请求问题，重试不会成功
+                if 400 <= response.status_code < 500:
+                    logger.error(
+                        f"AI 接口客户端错误 {response.status_code}，不再重试"
+                    )
+                    return _FALLBACK_REPLY
         except Exception as exc:
             logger.warning(f"AI 接口请求异常（第 {attempt} 次）: {exc}")
 
