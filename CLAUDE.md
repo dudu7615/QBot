@@ -32,7 +32,7 @@ This project uses `uv` as the package manager — always use `uv` instead of `pi
 QQ Gateway (WebSocket)
   └─► HermesWss/QQWebSocketClient  (wss_client.py)
         └─► on_message(msg: QQMessage)
-              └─► main.py → _to_old_message_data()  (convert QQMessage → MessageData)
+              └─► main.py → _to_message_data()  (convert QQMessage → MessageData)
                     └─► _dispatch_to_plugins()  (match by event type + command prefix)
                           ├─► plugin/AiChat.py     — AI chat via local newapi (OpenAI-compatible)
                           ├─► plugin/Weather.py   — Weather queries (心知天气 API)
@@ -45,7 +45,7 @@ QQ Gateway (WebSocket)
 | Directory | Purpose |
 |-----------|---------|
 | `modules/HermesWss/` | **WebSocket 客户端** — 连接 QQ Bot Gateway，接收消息、发送消息、心跳保活、断线重连 |
-| `modules/` | 核心模块：`Config` (YAML配置)、`HttpSender` (消息发送封装)、`Types` (MessageData TypedDict)、`Logger` (loguru) |
+| `modules/` | 核心模块：`Config` (YAML配置，Pydantic 模型)、`HttpSender` (消息发送封装)、`Types` (MessageData Pydantic 模型)、`Logger` (loguru) |
 | `plugin/` | **插件系统** — `PluginBase` 抽象基类 + 元类自动注册；每个插件实现 `run(message)` |
 | `plugin/*_d/` | 各插件的依赖模块（如 Sqlite 缓存、API 调用） |
 
