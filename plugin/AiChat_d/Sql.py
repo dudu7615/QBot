@@ -85,7 +85,11 @@ class User(_Model, table=True):
 class Message(_Model, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     openId: str = Field(
-        sa_column=Column(String, ForeignKey("user.openId", ondelete="CASCADE"))
+        sa_column=Column(
+            String,
+            ForeignKey("user.openId", ondelete="CASCADE"),
+            index=True,
+        )
     )
     content: str = Field(max_length=100000)
     createdAt: datetime = Field(default_factory=datetime.now)
