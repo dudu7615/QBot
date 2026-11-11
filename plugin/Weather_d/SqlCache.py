@@ -39,10 +39,23 @@ class Cache(_Model, table=True):
     detal: str
 
     @staticmethod
-    def addCache(path: str, detal: str, weaterType: WeatherType) -> None:
+    def addCache(path: str, detal: str, weatherType: WeatherType) -> None:
+        """写入一条缓存，并清理同城同类型的旧记录。
+
+        Args:
+            path: 城市名。
+            detal: 已格式化的天气文本。
+            weatherType: 今日或预报。
+        """
         with Session(_engine) as session:
-            cache = Cache(name=path, detal=detal, weatherType=weaterType)
-            session.add(cache)
+            session.exec(
+                delete(Cache)
+                .where(Cache.name == path)  # type: ignore[arg-type]
+                .where(Cache.weatherType == weatherType)  # type: ignore[arg-type]
+            )
+            session.add(
+                Cache(name=path, detal=detal, weatherType=weatherType)
+            )
             session.commit()
 
     @staticmethod
@@ -67,18 +80,15 @@ class User(_Model, table=True):
     location: str
 
     @staticmethod
-    def add(openId: str, location: str) -> None:
-        """新增或更新用户的常住地。
-
-        使用 merge 处理主键已存在的情况，避免重复设置时抛出 IntegrityError。
+    def add_or_update(openId: str, location: str) -> None:
+        """设置或更新常住地。
 
         Args:
-            openId: 用户的 openid。
+            openId: 用户标识。
             location: 城市名。
         """
         with Session(_engine) as session:
-            user = User(openId=openId, location=location)
-            session.merge(user)
+            session.merge(User(openId=openId, location=location))
             session.commit()
 
     @staticmethod

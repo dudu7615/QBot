@@ -125,5 +125,5 @@ class Weather(PluginBase):
                 await self._reply("输入格式错误. 请输入 /常住地 <城市名>", message)
                 return
 
-            SqlCache.User.add(author_id, command.argument)
+            SqlCache.User.add_or_update(author_id, command.argument)
             await self._reply(f"设置常住地: {command.argument}", message)
