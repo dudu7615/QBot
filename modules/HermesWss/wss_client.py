@@ -174,23 +174,12 @@ class QQWebSocketClient:
             return False
 
     async def stop(self) -> None:
-        """停止客户端，断开所有连接。"""
-        self.running = False
+        """停止客户端，断开所有连接。
 
-        # 等待进行中的消息处理结束，超时后取消
-        if self._dispatch_tasks:
-            pending: set[asyncio.Task[None]] = set(self._dispatch_tasks)
-            done, still_pending = await asyncio.wait(
-                pending, timeout=SHUTDOWN_GRACE_SECONDS
-            )
-            for task in still_pending:
-                task.cancel()
-            if still_pending:
-                await asyncio.gather(*still_pending, return_exceptions=True)
-            logger.info(
-                f"[QQBot] Dispatch drained: {len(done)} done, "
-                f"{len(still_pending)} cancelled"
-            )
+        先停监听与心跳，确保不会再有新回调被创建，再排空进行中的回调，
+        最后释放连接资源。
+        """
+        self.running = False
 
         if self._listen_task is not None:
             self._listen_task.cancel()
@@ -207,6 +196,21 @@ class QQWebSocketClient:
             except asyncio.CancelledError:
                 pass
             self._heartbeat_task = None
+
+        # 监听已停止，此刻的快照不会再被新任务污染
+        if self._dispatch_tasks:
+            pending: set[asyncio.Task[None]] = set(self._dispatch_tasks)
+            done, still_pending = await asyncio.wait(
+                pending, timeout=SHUTDOWN_GRACE_SECONDS
+            )
+            for task in still_pending:
+                task.cancel()
+            if still_pending:
+                await asyncio.gather(*still_pending, return_exceptions=True)
+            logger.info(
+                f"[QQBot] Dispatch drained: {len(done)} done, "
+                f"{len(still_pending)} cancelled"
+            )
 
         await self._cleanup()
         logger.info("[QQBot] Stopped")
