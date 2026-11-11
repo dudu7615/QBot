@@ -1,6 +1,7 @@
 """心知天气查询与本地缓存。"""
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -116,6 +117,18 @@ _config: WeatherConfig = _load_config()
 _last_request_at: datetime = datetime.now()
 _request_lock: asyncio.Lock = asyncio.Lock()
 _client: httpx.AsyncClient | None = None
+
+# 心知天气的 key 通过 URL 查询串传递，httpx 默认在 INFO 级别打印完整 URL，
+# 会把私钥写进日志文件。本模块的请求统一关闭该日志。
+_HTTPX_LOGGER_NAME: str = "httpx"
+
+
+def _silence_httpx_request_log() -> None:
+    """降低 httpx 日志级别，避免请求 URL 中的私钥进入日志文件。"""
+    logging.getLogger(_HTTPX_LOGGER_NAME).setLevel(logging.WARNING)
+
+
+_silence_httpx_request_log()
 
 
 def _get_client() -> httpx.AsyncClient:
