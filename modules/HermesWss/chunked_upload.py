@@ -396,7 +396,8 @@ class ChunkedUploader:
         body: dict[str, object] = {"upload_id": upload_id}
 
         last_error: str = ""
-        for attempt in range(_COMPLETE_UPLOAD_MAX_RETRIES):
+        # 与分片上传保持一致的语义：MAX_RETRIES 是重试次数，总尝试数为 N + 1
+        for attempt in range(_COMPLETE_UPLOAD_MAX_RETRIES + 1):
             try:
                 response: httpx.Response = await self.http_client.post(
                     url, json=body, headers=headers,
@@ -415,7 +416,7 @@ class ChunkedUploader:
             except httpx.RequestError as exc:
                 last_error = f"Complete upload request error: {exc}"
 
-            if attempt < _COMPLETE_UPLOAD_MAX_RETRIES - 1:
+            if attempt < _COMPLETE_UPLOAD_MAX_RETRIES:
                 delay: float = _COMPLETE_UPLOAD_BASE_DELAY * (2.0 ** attempt)
                 await asyncio.sleep(delay)
 
