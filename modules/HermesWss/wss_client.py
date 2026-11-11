@@ -44,6 +44,7 @@ from .constants import (
     WSCloseCode,
 )
 from .exceptions import QQCloseError, QQTokenError
+from .keyboards import parse_interaction_event
 from .models import (
     QQMessage,
     QQMessageAuthor,
@@ -816,56 +817,18 @@ class QQWebSocketClient:
     async def _on_interaction(self, data: dict[str, object]) -> None:
         """处理按钮交互事件（INTERACTION_CREATE）。
 
+        解析逻辑统一复用 keyboards.parse_interaction_event，
+        避免与手动解析出现字段层级不一致。
+
         Args:
             data: 交互事件数据字典。
         """
-        data_raw: object = data.get("data", {})
-        resolved: object = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
-        if isinstance(data_raw, dict):
-            resolved = data_raw.get("resolved", {}) if isinstance(data_raw.get("resolved"), dict) else {}
-
-        scene_code: int = 0
-        scene_code_obj: object = data.get("chat_type", 0)
-        if isinstance(scene_code_obj, int):
-            scene_code = scene_code_obj
-
-        scene_map: dict[int, str] = {0: "guild", 1: "group", 2: "c2c"}
-        scene: str = scene_map.get(scene_code, "")
-
-        button_data_obj: object = resolved.get("button_data", "") if isinstance(resolved, dict) else ""
-        if isinstance(resolved, dict):
-            bd: object = resolved.get("button_data", "")
-            button_data_str: str = str(bd) if bd is not None else ""
-        else:
-            button_data_str = ""
-
-        button_id_obj: object = resolved.get("button_id", "") if isinstance(resolved, dict) else ""
-        if isinstance(resolved, dict):
-            bid: object = resolved.get("button_id", "")
-            button_id_str: str = str(bid) if bid is not None else ""
-        else:
-            button_id_str = ""
-
-        type_value: int = 0
-        type_raw: object = data.get("type", 0)
-        if isinstance(type_raw, (int, float)):
-            type_value = int(type_raw)
-        event: InteractionEvent = InteractionEvent(
-            id=str(data.get("id", "") or ""),
-            type=type_value,
-            chat_type=scene_code,
-            scene=scene,
-            group_openid=str(data.get("group_openid", "") or ""),
-            group_member_openid=str(data.get("group_member_openid", "") or ""),
-            user_openid=str(data.get("user_openid", "") or ""),
-            button_data=button_data_str,
-            button_id=button_id_str,
-        )
+        event: InteractionEvent = parse_interaction_event(data)
 
         if self.on_interaction is not None:
             try:
                 await self.on_interaction(event)
-            except Exception as exc:
+            except Exception:
                 logger.exception("[QQBot] Interaction callback error")
 
     # ==================================================================

@@ -280,11 +280,16 @@ def parse_interaction_event(raw: dict[str, object]) -> InteractionEvent:
     Returns:
         解析完成的 :class:`InteractionEvent` 实例。
     """
-    # Extract nested data object if present
-    nested_data: dict[str, object] = {}
+    # 按钮字段可能位于 data.resolved（QQ 实际推送）、data 或顶层，逐级回退
+    top_data: dict[str, object] = {}
     raw_data = raw.get("data")
     if isinstance(raw_data, dict):
-        nested_data = raw_data
+        top_data = raw_data
+
+    nested_data: dict[str, object] = top_data
+    raw_resolved = top_data.get("resolved")
+    if isinstance(raw_resolved, dict):
+        nested_data = raw_resolved
 
     # Determine scene from chat_type
     raw_chat_type = raw.get("chat_type", 0)
@@ -304,8 +309,11 @@ def parse_interaction_event(raw: dict[str, object]) -> InteractionEvent:
         button_data = raw_button_data
     else:
         raw_top_button_data = raw.get("button_data")
+        raw_data_button_data = top_data.get("button_data")
         if isinstance(raw_top_button_data, str):
             button_data = raw_top_button_data
+        elif isinstance(raw_data_button_data, str):
+            button_data = raw_data_button_data
         else:
             button_data = ""
 
@@ -315,8 +323,11 @@ def parse_interaction_event(raw: dict[str, object]) -> InteractionEvent:
         button_id = raw_button_id
     else:
         raw_top_button_id = raw.get("button_id")
+        raw_data_button_id = top_data.get("button_id")
         if isinstance(raw_top_button_id, str):
             button_id = raw_top_button_id
+        elif isinstance(raw_data_button_id, str):
+            button_id = raw_data_button_id
         else:
             button_id = ""
 
@@ -326,8 +337,11 @@ def parse_interaction_event(raw: dict[str, object]) -> InteractionEvent:
         resolver_user_id = raw_resolver
     else:
         raw_top_resolver = raw.get("resolver_user_id")
+        raw_data_resolver = top_data.get("resolver_user_id")
         if isinstance(raw_top_resolver, str):
             resolver_user_id = raw_top_resolver
+        elif isinstance(raw_data_resolver, str):
+            resolver_user_id = raw_data_resolver
         else:
             resolver_user_id = ""
 
