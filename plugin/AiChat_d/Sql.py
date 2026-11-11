@@ -248,46 +248,6 @@ class Message(_Model, table=True):
 
         Message._refresh_user_activity(openId)
 
-    @staticmethod
-    def truncateTo(openId: str, keep_count: int) -> None:
-        """保留最近 keep_count 条消息，删除更早的。
-
-        始终保留最早的一条 system prompt。
-
-        Args:
-            openId: 用户 openid。
-            keep_count: 保留的最新消息数量（含 system prompt）。
-        """
-        with Session(_engine) as session:
-            all_messages: list[Message] = list(
-                session.exec(
-                    select(Message)
-                    .where(Message.openId == openId)
-                    .order_by(text("createdAt ASC, id ASC"))
-                )
-            )
-            if len(all_messages) <= keep_count:
-                return
-
-            system_messages: list[Message] = [
-                item for item in all_messages if item.role == MessageRole.system
-            ]
-            others: list[Message] = [
-                item for item in all_messages if item.role != MessageRole.system
-            ]
-            budget: int = max(keep_count - len(system_messages), 0)
-            for message in others[: max(len(others) - budget, 0)]:
-                session.delete(message)
-
-            try:
-                session.commit()
-            except Exception as exc:
-                logger.error(f"截断历史失败 openId={openId}: {exc}")
-                session.rollback()
-
-        User.touch(openId, Message.countByOpenId(openId))
-
-
 # 连接 SQLite 数据库
 _sqlite_file: Path = Paths.DATA / "chat.db"
 _sqlite_file.parent.mkdir(parents=True, exist_ok=True)
