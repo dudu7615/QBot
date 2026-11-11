@@ -286,6 +286,9 @@ class ChunkedUploader:
     ) -> None:
         """Step 2b: 并发上传分片。
 
+        用有界队列把分片流式交给固定数量的工作协程，内存中最多同时存在
+        ``concurrent`` 个分片，不会把整个文件读进内存。
+
         Args:
             file_path: 待上传文件。
             block_size: 每片大小（字节）。
@@ -295,37 +298,52 @@ class ChunkedUploader:
         Raises:
             UploadError: 任一上传失败。
         """
-        semaphore: asyncio.Semaphore = asyncio.Semaphore(concurrent)
-        parts: list[bytes] = []
-        with open(file_path, "rb") as file:
+        queue: asyncio.Queue[tuple[bytes, str, int] | None] = asyncio.Queue(
+            maxsize=concurrent
+        )
+        errors: list[BaseException] = []
+
+        async def _worker() -> None:
             while True:
-                chunk: bytes = file.read(block_size)
-                if not chunk:
-                    break
-                parts.append(chunk)
+                item: tuple[bytes, str, int] | None = await queue.get()
+                if item is None:
+                    return
+                part_data, cos_url, index = item
+                if errors:
+                    # 已有分片失败，其余工作协程直接退出
+                    continue
+                try:
+                    await self._upload_single_part(part_data, cos_url, index)
+                except BaseException as exc:
+                    errors.append(exc)
 
-        if len(parts) != len(upload_urls):
-            raise UploadError(
-                f"Part count mismatch: {len(parts)} parts vs "
-                f"{len(upload_urls)} upload URLs"
-            )
-
-        async def _send(part_data: bytes, cos_url: str, index: int) -> None:
-            async with semaphore:
-                await self._upload_single_part(part_data, cos_url, index)
-
-        tasks: list[asyncio.Task[None]] = [
-            asyncio.create_task(_send(part_data, cos_url, idx + 1))
-            for idx, (part_data, cos_url) in enumerate(zip(parts, upload_urls))
+        workers: list[asyncio.Task[None]] = [
+            asyncio.create_task(_worker()) for _ in range(concurrent)
         ]
 
-        results: list[None | BaseException] = await asyncio.gather(
-            *tasks, return_exceptions=True,
-        )
+        uploaded: int = 0
+        try:
+            with open(file_path, "rb") as file:
+                for index, cos_url in enumerate(upload_urls, start=1):
+                    part_data: bytes = file.read(block_size)
+                    if not part_data:
+                        raise UploadError(
+                            f"文件在分片 {index} 处提前结束"
+                        )
+                    await queue.put((part_data, cos_url, index))
+                    uploaded += 1
 
-        for result in results:
-            if isinstance(result, BaseException):
-                raise UploadError(f"Concurrent upload failed: {result}") from result
+                if file.read(1):
+                    raise UploadError(
+                        f"Part count mismatch: 文件大于 {uploaded} 个分片"
+                    )
+        finally:
+            for _ in workers:
+                await queue.put(None)
+            await asyncio.gather(*workers, return_exceptions=True)
+
+        if errors:
+            raise UploadError(f"Concurrent upload failed: {errors[0]}") from errors[0]
 
     async def _upload_single_part(
         self,
