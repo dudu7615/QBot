@@ -811,8 +811,11 @@ class QQWebSocketClient:
                 if msg.author is not None:
                     msg.author.member_openid = member_openid
 
-        # 触发回调：放入独立任务，避免慢插件阻塞读循环与心跳
+        # 触发回调：放入独立任务，避免慢插件阻塞读循环与心跳。
+        # 在创建任务前先申请许可，处理不过来时对读循环形成背压，
+        # 不会让待处理任务无限堆积。
         if self.on_message is not None:
+            await self._dispatch_semaphore.acquire()
             task: asyncio.Task[None] = asyncio.create_task(
                 self._dispatch_message(msg)
             )
@@ -822,15 +825,18 @@ class QQWebSocketClient:
     async def _dispatch_message(self, msg: QQMessage) -> None:
         """处理一条消息，异常只记录不向外抛。
 
+        许可由调用方（_on_message）在创建任务前获取，这里只负责释放。
+
         Args:
             msg: 收到的消息。
         """
         assert self.on_message is not None
-        async with self._dispatch_semaphore:
-            try:
-                await self.on_message(msg)
-            except Exception as exc:
-                logger.exception("[QQBot] Message callback error")
+        try:
+            await self.on_message(msg)
+        except Exception:
+            logger.exception("[QQBot] Message callback error")
+        finally:
+            self._dispatch_semaphore.release()
 
     async def _on_interaction(self, data: dict[str, object]) -> None:
         """处理按钮交互事件（INTERACTION_CREATE）。
