@@ -49,6 +49,9 @@ RATE_LIMIT_DELAY: float = 60.0
 QUICK_DISCONNECT_THRESHOLD: float = 5.0
 MAX_QUICK_DISCONNECT_COUNT: int = 3
 
+# 心跳 ACK 看门狗：超过 interval 的该倍数未收到任何帧即判定连接半开
+HEARTBEAT_TIMEOUT_FACTOR: float = 2.5
+
 # 消息处理并发与退出宽限
 MAX_CONCURRENT_HANDLERS: int = 8
 SHUTDOWN_GRACE_SECONDS: float = 10.0

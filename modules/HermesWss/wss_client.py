@@ -34,6 +34,7 @@ from .constants import (
     MAX_RECONNECT_ATTEMPTS,
     QUICK_DISCONNECT_THRESHOLD,
     DEDUP_MAX_SIZE,
+    HEARTBEAT_TIMEOUT_FACTOR,
     MAX_CONCURRENT_HANDLERS,
     MAX_QUICK_DISCONNECT_COUNT,
     RATE_LIMIT_DELAY,
@@ -107,6 +108,7 @@ class QQWebSocketClient:
         self._session_id: str | None = None
         self._last_seq: int | None = None
         self._heartbeat_interval: float = 30.0
+        self._last_frame_at: float = time.monotonic()
 
         # Token 管理
         self._access_token: str | None = None
@@ -342,6 +344,7 @@ class QQWebSocketClient:
                     ws_close=CONNECT_TIMEOUT_SECONDS,
                 ),
             )
+            self._last_frame_at = time.monotonic()
             logger.info(f"[QQBot] WebSocket connected to {gateway_url}")
         except Exception as exc:
             self._ws = None
@@ -529,6 +532,7 @@ class QQWebSocketClient:
 
         while self.running and self._ws is not None and not self._ws.closed:
             msg: aiohttp.WSMessage = await self._ws.receive()
+            self._last_frame_at = time.monotonic()
 
             if msg.type == aiohttp.WSMsgType.TEXT:
                 payload: WSPayload | None = self._parse_payload(msg.data)
@@ -560,6 +564,20 @@ class QQWebSocketClient:
                 await asyncio.sleep(self._heartbeat_interval)
                 if self._ws is None or self._ws.closed:
                     continue
+
+                # 长时间收不到任何帧（含心跳 ACK）说明连接已半开，主动断开触发重连
+                silence: float = time.monotonic() - self._last_frame_at
+                if silence > self._heartbeat_interval * HEARTBEAT_TIMEOUT_FACTOR:
+                    logger.warning(
+                        f"[QQBot] No frame for {silence:.0f}s, forcing reconnect"
+                    )
+                    try:
+                        await self._ws.close()
+                    except Exception:
+                        pass
+                    self._last_frame_at = time.monotonic()
+                    continue
+
                 try:
                     await self._ws.send_json({"op": WSOpCode.HEARTBEAT, "d": self._last_seq})
                 except Exception as exc:
