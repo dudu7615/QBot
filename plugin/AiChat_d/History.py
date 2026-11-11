@@ -1,6 +1,7 @@
-from plugin.AiChat_d import Paths, Types
+from plugin.AiChat_d import Paths
 from plugin.AiChat_d.Config import config
 from plugin.AiChat_d.Sql import Message, MessageRole, User
+from plugin.AiChat_d.Types import ChatMessage
 
 
 class PersonHistory:
@@ -31,12 +32,17 @@ class PersonHistory:
         with open(personality_file, "r", encoding="utf-8") as file:
             Message.addMessage(self.openId, file.read(), MessageRole.system)
 
-    def addHistory(self, message: Types.ApiJson_Messages) -> None:
+    def addHistory(self, message: ChatMessage) -> None:
+        """追加一条对话消息。
+
+        Args:
+            message: 对话消息。
+        """
         Message.addMessage(
-            self.openId, message["content"], MessageRole(message["role"])
+            self.openId, message.content, MessageRole(message.role)
         )
 
-    def getHistory(self) -> list[Types.ApiJson_Messages]:
+    def getHistory(self) -> list[dict[str, str]]:
         """返回可直接放入 API 请求的历史消息。
 
         超过 ``max_context_length`` 时先裁剪为 system prompt + 最近
@@ -49,7 +55,7 @@ class PersonHistory:
         if len(messages) > config.max_context_length:
             messages = self._truncate(messages)
 
-        return [{"role": msg.role, "content": msg.content} for msg in messages]
+        return [{"role": msg.role.value, "content": msg.content} for msg in messages]
 
     def _truncate(self, messages: list[Message]) -> list[Message]:
         """裁剪上下文并同步数据库。

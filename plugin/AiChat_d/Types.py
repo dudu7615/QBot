@@ -1,39 +1,57 @@
-from typing import TypedDict
+"""AiChat 使用到的 OpenAI 兼容接口数据结构。"""
+
+from pydantic import BaseModel, Field
 
 
-class ApiJson_Messages(TypedDict):
-    role: str  # system, user, assistant, tool
-    content: str
+class ChatMessage(BaseModel):
+    """一条对话消息。
 
+    Attributes:
+        role: system / user / assistant / tool。
+        content: 消息文本。
+    """
 
-class ApiJson(TypedDict):
-    model: str  # glm-4.5-flash
-    messages: list[ApiJson_Messages]
-    temperature: float  # 1
-    max_tokens: int  # 65536
-    stream: bool  # False
-    thinking: dict[str, str]  # {"type": "enabled"|"disabled"}
-    do_sample: bool  # True
-    top_p: float  # 0.95
-
-
-class ReplyJson_Choices_Message(ApiJson_Messages): ...
-
-
-class ReplyJson_Choices(TypedDict):
-    index: int
-    message: ReplyJson_Choices_Message
-    finish_reason: str
-
-
-class ReplyJson(TypedDict):
-    id: str
-    object: str
-    created: int
-    model: str
-    choices: list[ReplyJson_Choices]
-    usage: dict[str, int]
-
-    time: str
     role: str
     content: str
+
+
+class ThinkingConfig(BaseModel):
+    """是否启用思考模式。"""
+
+    type: str = "disabled"
+
+
+class ChatRequest(BaseModel):
+    """对话请求体（OpenAI 兼容）。"""
+
+    model: str
+    messages: list[ChatMessage]
+    stream: bool = False
+    temperature: float = 0.7
+    top_p: float = 0.7
+    max_tokens: int = 2048
+    do_sample: bool = True
+    thinking: ThinkingConfig = Field(default_factory=ThinkingConfig)
+
+
+class ChatChoiceMessage(BaseModel):
+    """回复中的单条消息。"""
+
+    role: str
+    content: str
+
+
+class ChatChoice(BaseModel):
+    """回复中的一个候选。"""
+
+    index: int = 0
+    message: ChatChoiceMessage
+    finish_reason: str = ""
+
+
+class ChatResponse(BaseModel):
+    """对话响应体，只保留用到的字段。"""
+
+    id: str = ""
+    model: str = ""
+    choices: list[ChatChoice] = Field(default_factory=list)

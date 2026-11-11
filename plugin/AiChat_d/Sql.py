@@ -7,8 +7,8 @@ from typing import Any, Optional
 from sqlmodel import SQLModel, Field, create_engine, Session, select, delete
 from sqlalchemy import (
     Column,
+    Enum as SAEnum,
     String,
-    CheckConstraint,
     ForeignKey,
     event,
     func,
@@ -91,8 +91,13 @@ class Message(_Model, table=True):
     createdAt: datetime = Field(default_factory=datetime.now)
     role: MessageRole = Field(
         sa_column=Column(
-            String(20),
-            CheckConstraint("role IN ('assistant','user','system')"),
+            SAEnum(
+                MessageRole,
+                native_enum=False,
+                length=20,
+                values_callable=lambda members: [item.value for item in members],
+                validate_strings=True,
+            ),
             nullable=False,
         )
     )

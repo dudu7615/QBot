@@ -1,12 +1,14 @@
+"""调用 OpenAI 兼容接口获取回复。"""
+
 import asyncio
-from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from modules.Logger import logger
 from plugin.AiChat_d.Config import config
 from plugin.AiChat_d.History import PersonHistory
-from plugin.AiChat_d.Types import ApiJson, ApiJson_Messages
+from plugin.AiChat_d.Types import ChatMessage, ChatRequest, ChatResponse
 
 _FALLBACK_REPLY = "抱歉，AI 接口请求失败，请稍后再试。"
 _MAX_ATTEMPTS = 3
@@ -31,25 +33,25 @@ async def close() -> None:
     _client = None
 
 
-def _extract_reply(payload: dict[str, Any]) -> str:
+def _extract_reply(payload: bytes) -> str:
     """从 OpenAI 兼容响应中取出回复文本。
 
     Args:
-        payload: 响应 JSON。
+        payload: 响应体原始字节。
 
     Returns:
-        回复文本。
-
-    Raises:
-        ValueError: 响应结构不符合预期。
+        回复文本；结构不符合预期时返回空字符串。
     """
     try:
-        content: Any = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError(f"响应结构异常: {payload}") from exc
-    if not isinstance(content, str):
-        raise ValueError(f"回复内容不是字符串: {content!r}")
-    return content
+        response = ChatResponse.model_validate_json(payload)
+    except ValidationError as exc:
+        logger.warning(f"AI 响应结构异常: {exc}")
+        return ""
+
+    if not response.choices:
+        logger.warning("AI 响应缺少 choices")
+        return ""
+    return response.choices[0].message.content
 
 
 async def request_reply(message: str, open_id: str) -> str:
@@ -65,39 +67,37 @@ async def request_reply(message: str, open_id: str) -> str:
         AI 回复文本；失败时返回固定提示。
     """
     history = PersonHistory(open_id)
-    payload: ApiJson = {
-        "model": config.model,
-        "messages": history.getHistory() + [{"role": "user", "content": message}],
-        "stream": False,
-        "temperature": 0.7,
-        "top_p": 0.7,
-        "max_tokens": 2048,
-        "do_sample": True,
-        "thinking": {"type": "disabled"},
-    }
+    request = ChatRequest(
+        model=config.model,
+        messages=[
+            ChatMessage(**item) for item in history.getHistory()
+        ]
+        + [ChatMessage(role="user", content=message)],
+    )
     headers: dict[str, str] = {"Authorization": f"Bearer {config.apiKey}"}
 
     logger.info(f"请求 AI openid={open_id}, 内容={message}")
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
+        reply: str = ""
         try:
             response: httpx.Response = await _get_client().post(
-                config.url, headers=headers, json=payload
+                config.url,
+                headers=headers,
+                json=request.model_dump(),
             )
             if response.is_success:
-                reply: str = _extract_reply(response.json())
+                reply = _extract_reply(response.content)
             else:
                 logger.warning(
                     f"AI 接口返回 {response.status_code}: {response.text[:200]}"
                 )
-                reply = ""
         except Exception as exc:
             logger.warning(f"AI 接口请求异常（第 {attempt} 次）: {exc}")
-            reply = ""
 
         if reply:
-            history.addHistory(ApiJson_Messages(role="user", content=message))
-            history.addHistory(ApiJson_Messages(role="assistant", content=reply))
+            history.addHistory(ChatMessage(role="user", content=message))
+            history.addHistory(ChatMessage(role="assistant", content=reply))
             logger.info(f"AI 回复 openid={open_id}, 内容={reply}")
             return reply
 

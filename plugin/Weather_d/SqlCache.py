@@ -4,7 +4,7 @@ from pathlib import Path
 from enum import Enum
 import sqlite3
 from sqlmodel import SQLModel, Field, create_engine, Session, select, delete
-from sqlalchemy import Column, String, CheckConstraint, text, event, MetaData
+from sqlalchemy import Column, Enum as SAEnum, text, event, MetaData
 
 # 创建独立的metadata
 _sqlMetadata = MetaData()
@@ -25,8 +25,13 @@ class Cache(_Model, table=True):
     name: str
     weatherType: WeatherType = Field(
         sa_column=Column(
-            String(20),
-            CheckConstraint("weatherType IN ('today','future')"),
+            SAEnum(
+                WeatherType,
+                native_enum=False,
+                length=20,
+                values_callable=lambda members: [item.value for item in members],
+                validate_strings=True,
+            ),
             nullable=False,
         )
     )
