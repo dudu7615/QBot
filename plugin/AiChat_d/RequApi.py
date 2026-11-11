@@ -17,6 +17,26 @@ _RETRY_BACKOFF_SECONDS = 1.0
 
 _client: httpx.AsyncClient | None = None
 
+# 每会话一把锁：避免同一用户的多条消息并发执行时，
+# 历史快照与实际落库顺序错乱，或 !clear 后又被挂起的回复写回历史。
+_session_locks: dict[str, asyncio.Lock] = {}
+
+
+def _session_lock(open_id: str) -> asyncio.Lock:
+    """返回指定会话的锁（不存在时创建）。
+
+    Args:
+        open_id: 会话标识。
+
+    Returns:
+        该会话的 asyncio.Lock。
+    """
+    lock: asyncio.Lock | None = _session_locks.get(open_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _session_locks[open_id] = lock
+    return lock
+
 
 def _get_client() -> httpx.AsyncClient:
     """返回模块级复用的 AsyncClient。"""
@@ -59,6 +79,32 @@ async def request_reply(message: str, open_id: str) -> str:
     """向 LLM 请求一次回复，并把成功的一轮写入历史。
 
     只有请求成功时才落库用户消息与助手回复，避免失败时留下孤立轮次。
+
+    Args:
+        message: 用户输入。
+        open_id: 会话标识。
+
+    Returns:
+        AI 回复文本；失败时返回固定提示。
+    """
+    async with _session_lock(open_id):
+        return await _request_and_store(message, open_id)
+
+
+async def clear_history(open_id: str) -> None:
+    """在会话锁保护下清空历史。
+
+    与 request_reply 共用同一把锁，避免清空后又被挂起的回复写回。
+
+    Args:
+        open_id: 会话标识。
+    """
+    async with _session_lock(open_id):
+        PersonHistory(open_id).clearHistory()
+
+
+async def _request_and_store(message: str, open_id: str) -> str:
+    """在会话锁保护下完成一次「读历史 → 请求 → 落库」。
 
     Args:
         message: 用户输入。

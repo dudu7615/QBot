@@ -4,8 +4,7 @@ from modules.Logger import logger
 from modules.Types import MessageData, MessageType
 from modules import HttpSender
 from plugin.PluginBase import PluginBase
-from plugin.AiChat_d.History import PersonHistory
-from plugin.AiChat_d.RequApi import request_reply
+from plugin.AiChat_d.RequApi import clear_history, request_reply
 
 _CLEAR_COMMANDS = {"clear"}
 _COMMAND_PREFIXES = ("!", "！")
@@ -85,7 +84,7 @@ class AiChat(PluginBase):
         if content.startswith(_COMMAND_PREFIXES):
             command: str = content[1:].split(" ")[0].strip()
             if command in _CLEAR_COMMANDS:
-                PersonHistory(session_id).clearHistory()
+                await clear_history(session_id)
                 await self._reply("已清空历史记录", message)
             else:
                 logger.warning(f"未知命令: {command}")
