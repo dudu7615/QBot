@@ -21,6 +21,8 @@ from modules.Logger import logger
 from modules.Types import MessageAuthor, MessageContent, MessageData
 from modules.HermesWss import QQWebSocketClient, QQMessage
 from plugin import PluginMeta
+from plugin.AiChat_d import RequApi
+from plugin.Weather_d import GetWeather
 
 
 class MainServer:
@@ -69,11 +71,14 @@ class MainServer:
             await self.client.stopped.wait()
 
     async def stop(self) -> None:
-        """停止 HermesWss WebSocket 客户端。"""
+        """停止 WebSocket 客户端并释放插件持有的 HTTP 连接。"""
         if self.client is not None:
             logger.info("正在停止 WebSocket 客户端...")
             await self.client.stop()
             self.client = None
+
+        await RequApi.close()
+        await GetWeather.close()
         logger.info("应用已停止")
 
     # ==================================================================
