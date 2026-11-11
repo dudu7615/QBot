@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime
 
 from modules.Logger import logger
@@ -35,7 +36,8 @@ class Holiday(PluginBase):
 
     async def run(self, message: MessageData) -> None:
         if not self._checked:
-            RequApi.ensure_cache_fresh()
+            # 拉取年度数据是同步 HTTP，放到线程池避免阻塞事件循环
+            await asyncio.to_thread(RequApi.ensure_cache_fresh)
             self._checked = True
 
         today: date = date.today()
