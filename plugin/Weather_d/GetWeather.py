@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 import yaml  # type: ignore[import-untyped]
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from modules.Logger import logger
 from plugin.Weather_d.SqlCache import Cache, WeatherType
@@ -56,6 +56,59 @@ def _load_config() -> WeatherConfig:
         raise SystemExit(1)
 
 
+class WeatherLocation(BaseModel):
+    """查询到的城市信息。"""
+
+    name: str = ""
+    path: str = ""
+
+
+class WeatherNow(BaseModel):
+    """实时天气。"""
+
+    text: str = ""
+    temperature: str = ""
+
+
+class WeatherDay(BaseModel):
+    """单日预报。"""
+
+    date: str = ""
+    text_day: str = ""
+    low: str = ""
+    high: str = ""
+    wind_direction: str = ""
+    wind_speed: str = ""
+    wind_scale: str = ""
+    rainfall: str = ""
+
+
+class WeatherNowResult(BaseModel):
+    """``now.json`` 的单条结果。"""
+
+    location: WeatherLocation
+    now: WeatherNow
+
+
+class WeatherDailyResult(BaseModel):
+    """``daily.json`` 的单条结果。"""
+
+    location: WeatherLocation
+    daily: list[WeatherDay] = Field(default_factory=list)
+
+
+class WeatherNowResponse(BaseModel):
+    """``now.json`` 响应体。"""
+
+    results: list[WeatherNowResult] = Field(default_factory=list)
+
+
+class WeatherDailyResponse(BaseModel):
+    """``daily.json`` 响应体。"""
+
+    results: list[WeatherDailyResult] = Field(default_factory=list)
+
+
 _config: WeatherConfig = _load_config()
 _last_request_at: datetime = datetime.now()
 _request_lock: asyncio.Lock = asyncio.Lock()
@@ -88,15 +141,15 @@ async def _throttle() -> None:
         _last_request_at = datetime.now()
 
 
-async def _request_json(url: str, params: dict[str, str]) -> dict[str, object] | None:
-    """请求天气接口并返回 JSON。
+async def _request_bytes(url: str, params: dict[str, str]) -> bytes | None:
+    """请求天气接口并返回响应体。
 
     Args:
         url: 接口地址。
         params: 查询参数（key 会自动补上）。
 
     Returns:
-        JSON 字典；失败时返回 None。
+        响应体字节；失败时返回 None。
     """
     query: dict[str, str] = {"key": _config.privKey, **params}
 
@@ -105,27 +158,14 @@ async def _request_json(url: str, params: dict[str, str]) -> dict[str, object] |
         try:
             response: httpx.Response = await _get_client().get(url, params=query)
             if response.is_success:
-                payload: object = response.json()
-                if isinstance(payload, dict):
-                    return payload
-                logger.warning(f"天气接口返回格式异常: {payload!r}"[:200])
-            else:
-                logger.warning(
-                    f"天气接口返回 {response.status_code}: {response.text[:200]}"
-                )
+                return response.content
+            logger.warning(
+                f"天气接口返回 {response.status_code}: {response.text[:200]}"
+            )
         except Exception as exc:
             logger.warning(f"请求天气接口失败（第 {attempt} 次）: {exc}")
 
     return None
-
-
-def _first_result(payload: dict[str, object]) -> dict[str, object] | None:
-    """取出响应中的第一条 results。"""
-    results: object = payload.get("results")
-    if not isinstance(results, list) or not results:
-        return None
-    first: object = results[0]
-    return first if isinstance(first, dict) else None
 
 
 async def getTodayWeather(cityName: str) -> str:
@@ -141,24 +181,28 @@ async def getTodayWeather(cityName: str) -> str:
     if cache:
         return cache.detal
 
-    payload: dict[str, object] | None = await _request_json(
+    payload: bytes | None = await _request_bytes(
         WEATHER_NOW_URL,
         {"location": cityName, "language": "zh-Hans", "unit": "c"},
     )
-    result: dict[str, object] | None = _first_result(payload) if payload else None
-    if result is None:
+    if payload is None:
         logger.error(f"获取天气信息失败: {cityName}")
         return "获取天气信息失败"
 
-    location: object = result.get("location")
-    now: object = result.get("now")
-    if not isinstance(location, dict) or not isinstance(now, dict):
-        logger.error(f"天气响应结构异常: {payload}")
+    try:
+        parsed = WeatherNowResponse.model_validate_json(payload)
+    except ValidationError as exc:
+        logger.error(f"实时天气响应结构异常: {exc}")
         return "获取天气信息失败"
 
+    if not parsed.results:
+        logger.error(f"实时天气响应没有结果: {cityName}")
+        return "获取天气信息失败"
+
+    result: WeatherNowResult = parsed.results[0]
     detail: str = (
-        f"城市: {location.get('path', cityName)}\n"
-        f"天气: {now.get('text', '')} {now.get('temperature', '')}℃\n"
+        f"城市: {result.location.path or cityName}\n"
+        f"天气: {result.now.text} {result.now.temperature}℃\n"
     )
     Cache.addCache(cityName, detail, WeatherType.today)
     return detail
@@ -177,7 +221,7 @@ async def getFutureWeather(cityName: str) -> str:
     if cache:
         return cache.detal
 
-    payload: dict[str, object] | None = await _request_json(
+    payload: bytes | None = await _request_bytes(
         WEATHER_DAILY_URL,
         {
             "location": cityName,
@@ -187,27 +231,29 @@ async def getFutureWeather(cityName: str) -> str:
             "days": "4",
         },
     )
-    result: dict[str, object] | None = _first_result(payload) if payload else None
-    if result is None:
+    if payload is None:
         logger.error(f"获取天气预报失败: {cityName}")
         return "获取天气信息失败"
 
-    location: object = result.get("location")
-    daily: object = result.get("daily")
-    if not isinstance(location, dict) or not isinstance(daily, list):
-        logger.error(f"天气预报响应结构异常: {payload}")
+    try:
+        parsed = WeatherDailyResponse.model_validate_json(payload)
+    except ValidationError as exc:
+        logger.error(f"天气预报响应结构异常: {exc}")
         return "获取天气信息失败"
 
-    lines: list[str] = [f"城市: {location.get('path', cityName)}"]
-    for day in daily:
-        if not isinstance(day, dict):
-            continue
+    if not parsed.results:
+        logger.error(f"天气预报响应没有结果: {cityName}")
+        return "获取天气信息失败"
+
+    forecast: WeatherDailyResult = parsed.results[0]
+    lines: list[str] = [f"城市: {forecast.location.path or cityName}"]
+    for day in forecast.daily:
         lines.append(
-            f"{day.get('date', '')}: \n"
-            f"{day.get('text_day', '')} {day.get('low', '')}~{day.get('high', '')}℃\n"
-            f"{day.get('wind_direction', '')}, {day.get('wind_speed', '')}m/s, "
-            f"{day.get('wind_scale', '')}级\n"
-            f"降雨: {day.get('rainfall', '')}\n"
+            f"{day.date}: \n"
+            f"{day.text_day} {day.low}~{day.high}℃\n"
+            f"{day.wind_direction}, {day.wind_speed}m/s, "
+            f"{day.wind_scale}级\n"
+            f"降雨: {day.rainfall}\n"
         )
 
     detail: str = "\n".join(lines)
