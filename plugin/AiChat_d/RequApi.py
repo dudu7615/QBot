@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from modules.Logger import logger
 from plugin.AiChat_d.Config import config
 from plugin.AiChat_d.History import PersonHistory
+from plugin.AiChat_d.Sql import Message
 from plugin.AiChat_d.Types import ChatMessage, ChatRequest, ChatResponse
 
 _FALLBACK_REPLY = "抱歉，AI 接口请求失败，请稍后再试。"
@@ -96,8 +97,8 @@ async def request_reply(message: str, open_id: str) -> str:
             logger.warning(f"AI 接口请求异常（第 {attempt} 次）: {exc}")
 
         if reply:
-            history.addHistory(ChatMessage(role="user", content=message))
-            history.addHistory(ChatMessage(role="assistant", content=reply))
+            # 一问一答在同一事务内写入，失败不会留下半轮对话
+            Message.addTurn(open_id, message, reply)
             logger.info(f"AI 回复 openid={open_id}, 内容={reply}")
             return reply
 

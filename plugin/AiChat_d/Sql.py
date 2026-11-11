@@ -108,6 +108,9 @@ class Message(_Model, table=True):
 
         通过 CASCADE 外键保证用户行存在；messageCount 在写入后按实际行数重算，
         避免与截断逻辑互相覆盖。
+
+        Raises:
+            SQLAlchemyError: 写入失败（由调用方决定是否中断本轮对话）。
         """
         with Session(_engine) as session:
             if session.get(User, openId) is None:
@@ -115,14 +118,51 @@ class Message(_Model, table=True):
 
             message = Message(openId=openId, content=content, role=role)
             session.add(message)
-
-            try:
-                session.commit()
-                session.refresh(message)
-            except Exception as exc:
-                logger.error(f"保存消息失败 openId={openId}: {exc}")
-                session.rollback()
+            session.commit()
+            session.refresh(message)
             return message
+
+    @staticmethod
+    def addTurn(openId: str, user_content: str, assistant_content: str) -> None:
+        """原子写入一问一答。
+
+        同一事务内提交两条消息并更新用户活跃信息，避免进程中断或写入
+        失败时历史里只剩半轮对话。
+
+        Args:
+            openId: 用户标识。
+            user_content: 用户消息。
+            assistant_content: 助手回复。
+
+        Raises:
+            SQLAlchemyError: 写入失败。
+        """
+        with Session(_engine) as session:
+            if session.get(User, openId) is None:
+                User.addOrUpdate(openId, "unknown")
+
+            session.add(
+                Message(openId=openId, content=user_content, role=MessageRole.user)
+            )
+            session.add(
+                Message(
+                    openId=openId,
+                    content=assistant_content,
+                    role=MessageRole.assistant,
+                )
+            )
+            session.commit()
+
+        Message._refresh_user_activity(openId)
+
+    @staticmethod
+    def _refresh_user_activity(openId: str) -> None:
+        """按实际行数刷新用户的 messageCount 与最后活跃时间。
+
+        Args:
+            openId: 用户标识。
+        """
+        User.touch(openId, Message.countByOpenId(openId))
 
     @staticmethod
     def countByOpenId(openId: str) -> int:
