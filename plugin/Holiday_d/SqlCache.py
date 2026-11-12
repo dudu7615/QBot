@@ -1,10 +1,12 @@
-from typing import Optional, Any
-from datetime import datetime, timedelta
+from datetime import date as DateType, datetime
 from pathlib import Path
-from enum import Enum
+from typing import Any, Optional
+
 import sqlite3
-from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
-from sqlalchemy import Column, String, CheckConstraint, text, event, MetaData
+from sqlmodel import SQLModel, Field, create_engine, Session, select
+from sqlalchemy import event, MetaData
+
+from modules.Logger import logger
 
 # 创建独立的metadata
 _sqlMetadata = MetaData()
@@ -34,51 +36,52 @@ class Cache(_Model, table=True):
             session.commit()
 
     @staticmethod
-    def getNextHoliday(date: datetime) -> Optional["Cache"]:
+    def _query(
+        day: DateType,
+        is_holiday: bool,
+    ) -> Optional["Cache"]:
+        """查询 day 当天或之后的第一个假期/调休。
+
+        Args:
+            day: 起始日期（按自然日比较，忽略时分秒）。
+            is_holiday: True 查假期，False 查调休。
+
+        Returns:
+            匹配的缓存行，没有则返回 None。
+        """
+        day_start: datetime = datetime(day.year, day.month, day.day)
         with Session(_engine) as session:
             statement = (
                 select(Cache)
-                .where(Cache.date >= date)
-                .where(Cache.isHoliday == True)
-                .order_by(text("date ASC"))
+                .where(Cache.date >= day_start)
+                .where(Cache.isHoliday == is_holiday)
+                .order_by(Cache.date)  # type: ignore[arg-type]
             )
-            result = session.exec(statement).first()
-            return result
+            return session.exec(statement).first()
 
     @staticmethod
-    def getNextDeHoliday(date: datetime) -> Optional["Cache"]:
-        """调休"""
-        with Session(_engine) as session:
-            statement = (
-                select(Cache)
-                .where(Cache.date >= date)
-                .where(Cache.isHoliday == False)
-                .order_by(text("date ASC"))
-            )
-            result = session.exec(statement).first()
-            return result
+    def getNextHoliday(day: DateType) -> Optional["Cache"]:
+        """查询 day 当天或之后的下一个假期。"""
+        return Cache._query(day, True)
+
+    @staticmethod
+    def getNextDeHoliday(day: DateType) -> Optional["Cache"]:
+        """查询 day 当天或之后的下一个调休。"""
+        return Cache._query(day, False)
 
     @staticmethod
     def getCachedYear() -> Optional[datetime]:
+        """返回缓存中最晚的日期，用于判断缓存是否覆盖当前年份。"""
         with Session(_engine) as session:
-            statement = select(Cache).order_by(text("date DESC")).limit(1)
-            result = session.exec(statement).first()
-            if result:
-                return result.date
-            return None
-
-    @staticmethod
-    def clearCache() -> None:
-        with Session(_engine) as session:
-            statement = delete(Cache)
-            session.exec(statement)
-            session.commit()
+            latest: Optional[Cache] = session.exec(
+                select(Cache).order_by(Cache.date.desc())  # type: ignore[attr-defined,unused-ignore]
+            ).first()
+        return latest.date if latest is not None else None
 
 
 # 连接 SQLite 数据库
 (Path(__file__).parent / "data").mkdir(parents=True, exist_ok=True)
 _sqlite_file = Path(__file__).parent / "data" / "cache.db"
-_sqlite_file.parent.mkdir(parents=True, exist_ok=True)
 _sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
 _engine = create_engine(
     _sqlite_url,
@@ -88,7 +91,7 @@ _engine = create_engine(
 
 
 @event.listens_for(_engine, "connect")
-def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):  # type: ignore
+def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any) -> None:  # type: ignore[unused-ignore]
     cursor = dbapi_connection.cursor()
     # 仅保留【必选核心配置】，剔除冗余调试和进阶配置，简洁高效
     cursor.execute("PRAGMA foreign_keys = ON")  # 外键检查（保障数据完整性）

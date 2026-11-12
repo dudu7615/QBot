@@ -10,26 +10,44 @@ HermesWss — QQ Bot REST API 消息发送器。
 from __future__ import annotations
 
 import asyncio
-import logging
+import itertools
 import uuid
 from typing import Optional
 
 import httpx
 
-from .constants import API_BASE, DEFAULT_API_TIMEOUT, MEDIA_TYPE_IMAGE, MEDIA_TYPE_VOICE, MEDIA_TYPE_VIDEO, MEDIA_TYPE_FILE, MSG_TYPE_TEXT, MSG_TYPE_MARKDOWN, MSG_TYPE_MEDIA, MSG_TYPE_INPUT_NOTIFY, MAX_MESSAGE_LENGTH
+from .constants import API_BASE, DEFAULT_API_TIMEOUT, MEDIA_TYPE_IMAGE, MEDIA_TYPE_VOICE, MEDIA_TYPE_VIDEO, MEDIA_TYPE_FILE, MSG_TYPE_TEXT, MSG_TYPE_MEDIA, MSG_TYPE_INPUT_NOTIFY, MAX_MESSAGE_LENGTH
 from .exceptions import QQApiError, QQTokenError
-from .keyboards import build_approval_keyboard, build_approval_text, build_update_prompt_keyboard
+from .keyboards import build_approval_keyboard, build_approval_text
 from .models import (
     ApprovalRequest,
     InlineKeyboard,
     SendResult,
-    AccessTokenData,
 )
 from .token_manager import TokenManager
-from .utils import get_api_headers
+
+from modules.Logger import logger
 
 
-logger = logging.getLogger(__name__)
+# 同一进程内单调递增的消息序号，QQ 用它区分同一事件下的多条回复
+_msg_seq_counter: itertools.count[int] = itertools.count(1)
+
+
+def _next_msg_seq() -> int:
+    """返回下一个 msg_seq（1~65535 循环）。"""
+    return next(_msg_seq_counter) % 65535 + 1
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    """判断 API 状态码是否值得重试。
+
+    Args:
+        status_code: HTTP 状态码。
+
+    Returns:
+        5xx 与 429（限流）可重试，其余视为永久错误。
+    """
+    return status_code == 0 or status_code == 429 or status_code >= 500
 
 
 class QQMessageSender:
@@ -141,17 +159,10 @@ class QQMessageSender:
         Returns:
             可用于 API 请求的消息体字典。
         """
-        # 生成消息序列号（防重放 + 回复链标识）
-        import time as _time
-        import uuid as _uuid
-        time_part: int = int(_time.time()) % 100000000
-        rand_part: int = int(_uuid.uuid4().hex[:4], 16)
-        msg_seq: int = (time_part ^ rand_part) % 65536
-
         body: dict[str, object] = {
             "content": content,
             "msg_type": MSG_TYPE_TEXT,
-            "msg_seq": msg_seq,
+            "msg_seq": _next_msg_seq(),
         }
         if reply_to is not None:
             body["msg_id"] = reply_to
@@ -221,8 +232,8 @@ class QQMessageSender:
         Args:
             openid: 用户的 openid。
             content: 消息文本（自动按 4000 字符分片）。
-            reply_to: 回复的消息 ID（仅第一片携带）。
-            event_id: 网关事件 ID（仅第一片携带）。
+            reply_to: 回复的消息 ID（每片都携带，靠 msg_seq 区分）。
+            event_id: 网关事件 ID（每片都携带，保持被动回复语义）。
 
         Returns:
             每片的发送结果列表。
@@ -247,8 +258,8 @@ class QQMessageSender:
         Args:
             group_openid: 群的 openid。
             content: 消息文本（自动按 4000 字符分片）。
-            reply_to: 回复的消息 ID（仅第一片携带）。
-            event_id: 网关事件 ID（仅第一片携带）。
+            reply_to: 回复的消息 ID（每片都携带，靠 msg_seq 区分）。
+            event_id: 网关事件 ID（每片都携带，保持被动回复语义）。
 
         Returns:
             每片的发送结果列表。
@@ -274,33 +285,38 @@ class QQMessageSender:
         Args:
             chat_id: 聊天对象 ID。
             content: 消息文本。
-            reply_to: 初始回复的消息 ID。
+            reply_to: 回复的消息 ID，每片都携带。
             is_group: 是否为群聊消息。
-            event_id: 网关事件 ID（仅第一片携带）。
+            event_id: 网关事件 ID，每片都携带。
 
         Returns:
             每片的发送结果列表。
         """
         results: list[SendResult] = []
 
-        async def _do_send(text: str, reply: str | None) -> SendResult:
+        async def _do_send(
+            text: str,
+            reply: str | None,
+            event: str | None,
+        ) -> SendResult:
             if is_group:
-                return await self.send_text_to_group(chat_id, text, reply, event_id=event_id)
-            return await self.send_text_to_c2c(chat_id, text, reply, event_id=event_id)
+                return await self.send_text_to_group(chat_id, text, reply, event_id=event)
+            return await self.send_text_to_c2c(chat_id, text, reply, event_id=event)
 
         if len(content) <= MAX_MESSAGE_LENGTH:
-            result: SendResult = await _do_send(content, reply_to)
+            result: SendResult = await _do_send(content, reply_to, event_id)
             results.append(result)
             return results
 
         chunk_start: int = 0
-        is_first: bool = True
         while chunk_start < len(content):
             chunk: str = content[chunk_start:chunk_start + MAX_MESSAGE_LENGTH]
-            result = await _do_send(chunk, reply_to if is_first else None)
+            # 每一片都必须保留被动回复上下文：不带 msg_id/event_id 的消息
+            # 会被 QQ 当作主动推送，而主动推送不可用。各片靠各自递增的
+            # msg_seq 区分，属于同一 msg_id 下的不同回复。
+            result = await _do_send(chunk, reply_to, event_id)
             results.append(result)
             chunk_start += MAX_MESSAGE_LENGTH
-            is_first = False
 
         return results
 
@@ -479,15 +495,12 @@ class QQMessageSender:
             else:
                 await self.send_text_to_group(chat_id, text, reply_to, keyboard)
             logger.info(
-                "Approval request sent to %s:%s (session=%.20s...)",
-                chat_type, chat_id, req.session_key,
+                f"Approval request sent to {chat_type}:{chat_id} "
+                f"(session={req.session_key[:20]}...)"
             )
             return True
         except Exception as exc:
-            logger.error(
-                "Failed to send approval to %s:%s: %s",
-                chat_type, chat_id, exc,
-            )
+            logger.error(f"Failed to send approval to {chat_type}:{chat_id}: {exc}")
             return False
 
     async def send_typing(self, chat_id: str, chat_type: str = "c2c") -> None:
@@ -534,31 +547,33 @@ class QQMessageSender:
             发送结果（SendResult）。
         """
         last_error: str = ""
+        retryable: bool = False
 
         for attempt in range(max_retries):
             try:
                 token: str = await self._token_manager.get_token()
                 data: dict[str, object] = await self._api_request(method, path, body, token)
-                msg_id: str = str(data.get("id", uuid.uuid4().hex[:12]))
+                response_id: object = data.get("id")
                 return SendResult(
                     success=True,
-                    message_id=msg_id,
+                    message_id=response_id if isinstance(response_id, str) else "",
                     raw_response=data,
                 )
-            except (QQApiError, QQTokenError) as exc:
-                error_str: str = str(exc).lower()
+            except QQApiError as exc:
                 last_error = str(exc)
+                retryable = _is_retryable_status(exc.status_code)
+                if not retryable:
+                    return SendResult(success=False, error=last_error, retryable=False)
+            except QQTokenError as exc:
+                last_error = str(exc)
+                retryable = True
 
-                # 永久性错误不重试
-                if any(k in error_str for k in ("invalid", "forbidden", "not found", "bad request")):
-                    return SendResult(success=False, error=str(exc), retryable=False)
+            if attempt < max_retries - 1:
+                delay: float = 1.0 * (2.0 ** attempt)
+                logger.warning(
+                    f"Send retry {attempt + 1}/{max_retries} "
+                    f"after {delay:.1f}s: {last_error}"
+                )
+                await asyncio.sleep(delay)
 
-                if attempt < max_retries - 1:
-                    delay: float = 1.0 * (2.0 ** attempt)
-                    logger.warning(
-                        "Send retry %d/%d after %.1fs: %s",
-                        attempt + 1, max_retries, delay, exc,
-                    )
-                    await asyncio.sleep(delay)
-
-        return SendResult(success=False, error=last_error, retryable=True)
+        return SendResult(success=False, error=last_error, retryable=retryable)

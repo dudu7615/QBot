@@ -80,7 +80,21 @@ class UploadDailyLimitExceededError(UploadError):
 
 
 class UploadFileTooLargeError(UploadError):
-    """文件超过单文件大小上限。"""
+    """文件超过单文件大小上限。
+
+    Attributes:
+        file_name: 文件名。
+        size: 实际大小（字节）。
+        limit: 允许的上限（字节）。
+    """
+
+    def __init__(self, file_name: str, size: int, limit: int) -> None:
+        self.file_name: str = file_name
+        self.size: int = size
+        self.limit: int = limit
+        super().__init__(
+            f"{file_name} 大小 {size} 字节超过上限 {limit} 字节"
+        )
 
 
 class QQBindTaskError(HermesWssError):

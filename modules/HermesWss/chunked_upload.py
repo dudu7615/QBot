@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import logging
 from pathlib import Path
 from typing import Callable
 
@@ -26,8 +25,7 @@ from .models import UploadPrepareResponse, UploadPartFinishResponse, UploadCompl
 from .token_manager import TokenManager
 from .utils import get_api_headers
 
-
-logger = logging.getLogger(__name__)
+from modules.Logger import logger
 
 
 # ── 业务错误码 ──────────────────────────────────────────────────────
@@ -46,6 +44,9 @@ _PART_FINISH_MAX_TIMEOUT: float = 600.0
 
 _COMPLETE_UPLOAD_MAX_RETRIES: int = 2
 _COMPLETE_UPLOAD_BASE_DELAY: float = 2.0
+
+# 分片上传的大小上限（QQ API 规范：10 MB ~ 100 MB）
+_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024
 
 # 前 10,002,432 字节用于 md5_10m 哈希（QQ API 规范）
 _MD5_10M_SIZE: int = 10_002_432
@@ -92,11 +93,8 @@ class ChunkedUploader:
             含 token 的请求头字典。
         """
         token: str = await self.token_manager.get_token()
-        headers: dict[str, str] = {
-            "Authorization": f"QQBot {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
+        headers: dict[str, str] = get_api_headers()
+        headers["Authorization"] = f"QQBot {token}"
         return headers
 
     async def upload_file(
@@ -129,6 +127,11 @@ class ChunkedUploader:
         file_size: int = file_path_obj.stat().st_size
         file_name: str = file_path_obj.name
 
+        if file_size > _MAX_UPLOAD_BYTES:
+            raise UploadFileTooLargeError(
+                file_name, file_size, _MAX_UPLOAD_BYTES,
+            )
+
         # 计算 md5_10m（QQ API 要求）
         md5_10m: str = self._compute_md5_10m(file_path_obj)
 
@@ -140,33 +143,36 @@ class ChunkedUploader:
         block_size: int = prepare.block_size
         upload_urls: list[str] = prepare.upload_urls
 
-        # 读取文件并按 block_size 分片
-        file_bytes: bytes = file_path_obj.read_bytes()
-        parts: list[bytes] = [
-            file_bytes[i:i + block_size]
-            for i in range(0, len(file_bytes), block_size)
-        ]
-
-        if len(parts) != len(upload_urls):
+        if block_size <= 0:
             raise UploadError(
-                f"Part count mismatch: {len(parts)} parts vs "
+                f"upload_prepare 返回了非法的 block_size: {block_size}"
+            )
+
+        expected_parts: int = (file_size + block_size - 1) // block_size
+        if expected_parts != len(upload_urls):
+            raise UploadError(
+                f"Part count mismatch: {expected_parts} parts vs "
                 f"{len(upload_urls)} upload URLs"
             )
 
-        # Step 2: 上传每个分片
+        # Step 2: 逐片读取文件并上传，避免把整个大文件读入内存
         concurrent: int = min(concurrent_parts, _MAX_CONCURRENT_PARTS)
         if concurrent > 1:
-            await self._upload_parts_concurrent(parts, upload_urls)
+            await self._upload_parts_concurrent(
+                file_path_obj, block_size, upload_urls, concurrent,
+            )
         else:
-            await self._upload_parts_sequential(parts, upload_urls)
+            await self._upload_parts_sequential(
+                file_path_obj, block_size, upload_urls,
+            )
 
         # Step 3: complete upload
         result: UploadCompleteResponse = await self._complete_upload(
             chat_id, chat_type, prepare.upload_id,
         )
+        # file_info 是可复用的富媒体 token，不写入持久化日志
         logger.info(
-            "Upload complete: %s (%d bytes) → file_info=%s",
-            file_name, file_size, result.file_info,
+            f"Upload complete: {file_name} ({file_size} bytes) → file_info 已获取"
         )
         return result
 
@@ -250,49 +256,94 @@ class ChunkedUploader:
 
     async def _upload_parts_sequential(
         self,
-        parts: list[bytes],
+        file_path: Path,
+        block_size: int,
         upload_urls: list[str],
     ) -> None:
         """Step 2a: 顺序上传分片。
 
         Args:
-            parts: 分片字节列表。
+            file_path: 待上传文件。
+            block_size: 每片大小（字节）。
             upload_urls: 预签名的 COS URL 列表。
 
         Raises:
             UploadError: 上传失败。
         """
-        for idx, (part_data, cos_url) in enumerate(zip(parts, upload_urls)):
-            await self._upload_single_part(part_data, cos_url, idx + 1)
+        with open(file_path, "rb") as file:
+            for idx, cos_url in enumerate(upload_urls):
+                part_data: bytes = file.read(block_size)
+                if not part_data:
+                    raise UploadError(f"文件在分片 {idx + 1} 处提前结束")
+                await self._upload_single_part(part_data, cos_url, idx + 1)
 
     async def _upload_parts_concurrent(
         self,
-        parts: list[bytes],
+        file_path: Path,
+        block_size: int,
         upload_urls: list[str],
+        concurrent: int,
     ) -> None:
         """Step 2b: 并发上传分片。
 
+        用有界队列把分片流式交给固定数量的工作协程，内存中最多同时存在
+        ``concurrent`` 个分片，不会把整个文件读进内存。
+
         Args:
-            parts: 分片字节列表。
+            file_path: 待上传文件。
+            block_size: 每片大小（字节）。
             upload_urls: 预签名的 COS URL 列表。
+            concurrent: 同时上传的分片数。
 
         Raises:
-            UploadError: 任一上上传失败。
+            UploadError: 任一上传失败。
         """
-        tasks: list[asyncio.Task[None]] = []
-        for idx, (part_data, cos_url) in enumerate(zip(parts, upload_urls)):
-            task: asyncio.Task[None] = asyncio.create_task(
-                self._upload_single_part(part_data, cos_url, idx + 1),
-            )
-            tasks.append(task)
-
-        results: list[None | BaseException] = await asyncio.gather(
-            *tasks, return_exceptions=True,
+        queue: asyncio.Queue[tuple[bytes, str, int] | None] = asyncio.Queue(
+            maxsize=concurrent
         )
+        errors: list[BaseException] = []
 
-        for result in results:
-            if isinstance(result, BaseException):
-                raise UploadError(f"Concurrent upload failed: {result}") from result
+        async def _worker() -> None:
+            while True:
+                item: tuple[bytes, str, int] | None = await queue.get()
+                if item is None:
+                    return
+                part_data, cos_url, index = item
+                if errors:
+                    # 已有分片失败，其余工作协程直接退出
+                    continue
+                try:
+                    await self._upload_single_part(part_data, cos_url, index)
+                except BaseException as exc:
+                    errors.append(exc)
+
+        workers: list[asyncio.Task[None]] = [
+            asyncio.create_task(_worker()) for _ in range(concurrent)
+        ]
+
+        uploaded: int = 0
+        try:
+            with open(file_path, "rb") as file:
+                for index, cos_url in enumerate(upload_urls, start=1):
+                    part_data: bytes = file.read(block_size)
+                    if not part_data:
+                        raise UploadError(
+                            f"文件在分片 {index} 处提前结束"
+                        )
+                    await queue.put((part_data, cos_url, index))
+                    uploaded += 1
+
+                if file.read(1):
+                    raise UploadError(
+                        f"Part count mismatch: 文件大于 {uploaded} 个分片"
+                    )
+        finally:
+            for _ in workers:
+                await queue.put(None)
+            await asyncio.gather(*workers, return_exceptions=True)
+
+        if errors:
+            raise UploadError(f"Concurrent upload failed: {errors[0]}") from errors[0]
 
     async def _upload_single_part(
         self,
@@ -319,7 +370,7 @@ class ChunkedUploader:
                     timeout=_PART_UPLOAD_TIMEOUT,
                 )
                 if response.is_success:
-                    logger.debug("Part %d uploaded successfully", part_number)
+                    logger.debug(f"Part {part_number} uploaded successfully")
                     return
 
                 last_error = (
@@ -363,6 +414,7 @@ class ChunkedUploader:
         body: dict[str, object] = {"upload_id": upload_id}
 
         last_error: str = ""
+        # 与分片上传保持一致的语义：MAX_RETRIES 是重试次数，总尝试数为 N + 1
         for attempt in range(_COMPLETE_UPLOAD_MAX_RETRIES + 1):
             try:
                 response: httpx.Response = await self.http_client.post(
@@ -382,7 +434,7 @@ class ChunkedUploader:
             except httpx.RequestError as exc:
                 last_error = f"Complete upload request error: {exc}"
 
-            if attempt < _COMPLETE_UPLOAD_MAX_RETRIES - 1:
+            if attempt < _COMPLETE_UPLOAD_MAX_RETRIES:
                 delay: float = _COMPLETE_UPLOAD_BASE_DELAY * (2.0 ** attempt)
                 await asyncio.sleep(delay)
 

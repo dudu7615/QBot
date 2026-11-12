@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from enum import Enum
 import sqlite3
-from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
-from sqlalchemy import Column, String, CheckConstraint, text, event, MetaData
+from sqlmodel import SQLModel, Field, create_engine, Session, select, delete
+from sqlalchemy import Column, Enum as SAEnum, text, event, MetaData
 
 # 创建独立的metadata
 _sqlMetadata = MetaData()
@@ -25,8 +25,13 @@ class Cache(_Model, table=True):
     name: str
     weatherType: WeatherType = Field(
         sa_column=Column(
-            String(20),
-            CheckConstraint("weatherType IN ('today','future')"),
+            SAEnum(
+                WeatherType,
+                native_enum=False,
+                length=20,
+                values_callable=lambda members: [item.value for item in members],
+                validate_strings=True,
+            ),
             nullable=False,
         )
     )
@@ -34,10 +39,23 @@ class Cache(_Model, table=True):
     detal: str
 
     @staticmethod
-    def addCache(path: str, detal: str, weaterType: WeatherType) -> None:
+    def addCache(path: str, detal: str, weatherType: WeatherType) -> None:
+        """写入一条缓存，并清理同城同类型的旧记录。
+
+        Args:
+            path: 城市名。
+            detal: 已格式化的天气文本。
+            weatherType: 今日或预报。
+        """
         with Session(_engine) as session:
-            cache = Cache(name=path, detal=detal, weatherType=weaterType)
-            session.add(cache)
+            session.exec(
+                delete(Cache)
+                .where(Cache.name == path)  # type: ignore[arg-type]
+                .where(Cache.weatherType == weatherType)  # type: ignore[arg-type]
+            )
+            session.add(
+                Cache(name=path, detal=detal, weatherType=weatherType)
+            )
             session.commit()
 
     @staticmethod
@@ -62,10 +80,15 @@ class User(_Model, table=True):
     location: str
 
     @staticmethod
-    def add(openId: str, location: str) -> None:
+    def add_or_update(openId: str, location: str) -> None:
+        """设置或更新常住地。
+
+        Args:
+            openId: 用户标识。
+            location: 城市名。
+        """
         with Session(_engine) as session:
-            user = User(openId=openId, location=location)
-            session.add(user)
+            session.merge(User(openId=openId, location=location))
             session.commit()
 
     @staticmethod

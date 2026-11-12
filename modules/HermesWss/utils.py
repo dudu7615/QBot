@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import platform
 import sys
-from typing import Any
 
 from .constants import HERMESWSS_VERSION
 
@@ -52,18 +51,3 @@ def get_api_headers() -> dict[str, str]:
         "Accept": "application/json",
         "User-Agent": build_user_agent(),
     }
-
-
-def coerce_list(value: Any) -> list[str]:
-    """将配置值统一转为字符串列表。
-
-    接受逗号分隔字符串、列表、元组、集合或单个值。
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    if isinstance(value, (list, tuple, set)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    result: str = str(value).strip()
-    return [result] if result else []

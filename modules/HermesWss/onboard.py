@@ -16,7 +16,6 @@ HermesWss — QQ Bot 扫码配网（onboarding）。
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Optional
 
@@ -34,8 +33,7 @@ from .crypto import decrypt_secret, generate_bind_key
 from .exceptions import QQBindError, QQBindTaskError
 from .models import BindResult, BindStatusEnum
 from .utils import get_api_headers
-
-logger = logging.getLogger(__name__)
+from modules.Logger import logger
 
 
 def build_connect_url(task_id: str) -> str:
@@ -266,21 +264,19 @@ def qr_register(timeout_seconds: int = 600) -> BindResult | None:
     task_id, aes_key = _create_bind_task(ONBOARD_API_TIMEOUT)
 
     logger.info(
-        "绑定任务已创建: task_id=%s, 请在 %d 秒内完成扫码",
-        task_id,
-        timeout_seconds,
+        f"绑定任务已创建: task_id={task_id}, 请在 {timeout_seconds} 秒内完成扫码"
     )
 
     # Step 2: 构建配网 URL & 渲染 QR 码
     connect_url: str = build_connect_url(task_id)
     _render_qr(connect_url)
 
-    print(f"\n{'=' * 60}")
-    print("  QQ Bot 扫码配网")
-    print(f"{'=' * 60}")
-    print(f"  请在浏览器中打开以下链接或扫描上方 QR 码：")
-    print(f"  {connect_url}")
-    print(f"{'=' * 60}\n")
+    logger.info("=" * 60)
+    logger.info("  QQ Bot 扫码配网")
+    logger.info("=" * 60)
+    logger.info("  请在浏览器中打开以下链接或扫描上方 QR 码：")
+    logger.info(f"  {connect_url}")
+    logger.info("=" * 60)
 
     # Step 3: 轮询绑定结果
     poll_deadline: float = deadline - time.monotonic()
@@ -299,22 +295,17 @@ def qr_register(timeout_seconds: int = 600) -> BindResult | None:
 
     # Step 4: 处理结果
     if status == BindStatusEnum.EXPIRED:
-        logger.warning("绑定任务已过期（task_id=%s）", task_id)
+        logger.warning(f"绑定任务已过期（task_id={task_id}）")
         return None
 
     if status != BindStatusEnum.COMPLETED:
-        logger.warning(
-            "绑定任务未完成（status=%s, task_id=%s）",
-            status,
-            task_id,
-        )
+        logger.warning(f"绑定任务未完成（status={status}, task_id={task_id}）")
         return None
 
     if not app_id or not encrypted_secret:
         logger.error(
-            "绑定返回数据不完整: app_id=%s, encrypted_secret=%s",
-            app_id,
-            "***" if encrypted_secret else "(空)",
+            f"绑定返回数据不完整: app_id={app_id}, "
+            f"encrypted_secret={'***' if encrypted_secret else '(空)'}"
         )
         return None
 
@@ -329,11 +320,7 @@ def qr_register(timeout_seconds: int = 600) -> BindResult | None:
     if not client_secret:
         raise QQBindError("解密后的 client_secret 为空")
 
-    logger.info(
-        "扫码配网成功: app_id=%s, user_openid=%s",
-        app_id,
-        user_openid,
-    )
+    logger.info(f"扫码配网成功: app_id={app_id}, user_openid={user_openid}")
 
     return BindResult(
         app_id=app_id,

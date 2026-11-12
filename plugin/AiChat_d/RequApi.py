@@ -1,56 +1,161 @@
+"""调用 OpenAI 兼容接口获取回复。"""
+
+import asyncio
+
 import httpx
+from pydantic import ValidationError
+
 from modules.Logger import logger
-from plugin.AiChat_d.Types import ApiJson, ApiJson_Messages
 from plugin.AiChat_d.Config import config
 from plugin.AiChat_d.History import PersonHistory
+from plugin.AiChat_d.Sql import Message
+from plugin.AiChat_d.Types import ChatMessage, ChatRequest, ChatResponse
 
-client: httpx.AsyncClient = httpx.AsyncClient(timeout=60.0)
+_FALLBACK_REPLY = "抱歉，AI 接口请求失败，请稍后再试。"
+_MAX_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = 1.0
 
-url = config["url"]
+_client: httpx.AsyncClient | None = None
+
+# 每会话一把锁：避免同一用户的多条消息并发执行时，
+# 历史快照与实际落库顺序错乱，或 !clear 后又被挂起的回复写回历史。
+_session_locks: dict[str, asyncio.Lock] = {}
 
 
-async def RequApi(messages: str, openId: str) -> str:
-    logger.debug(f"RequApi called with openId: {openId}, messages: {messages}")
-    history = PersonHistory(openId)
+def _session_lock(open_id: str) -> asyncio.Lock:
+    """返回指定会话的锁（不存在时创建）。
 
-    payloda: ApiJson = {
-        "model": config["model"],
-        "messages": history.getHistory() + [{"role": "user", "content": messages}],
-        "stream": False,
-        "temperature": 0.7,
-        "top_p": 0.7,
-        "max_tokens": 2048,
-        "do_sample": True,
-        "thinking": {"type": "disabled"},
-    }
+    Args:
+        open_id: 会话标识。
 
-    headers = {
-        "Authorization": f"Bearer {config['apiKey']}",
-        # "Content-Type": "application/json",
-    }
-    logger.info(f"请求Glm openid: {openId}, 请求内容: {messages}")
-    history.addHistory(
-        ApiJson_Messages(
-            role="user",
-            content=messages,
-        )
+    Returns:
+        该会话的 asyncio.Lock。
+    """
+    lock: asyncio.Lock | None = _session_locks.get(open_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _session_locks[open_id] = lock
+    return lock
+
+
+def _get_client() -> httpx.AsyncClient:
+    """返回模块级复用的 AsyncClient。"""
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=60.0)
+    return _client
+
+
+async def close() -> None:
+    """关闭共享的 HTTP 客户端（进程退出时调用）。"""
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
+
+def _extract_reply(payload: bytes) -> str:
+    """从 OpenAI 兼容响应中取出回复文本。
+
+    Args:
+        payload: 响应体原始字节。
+
+    Returns:
+        回复文本；结构不符合预期时返回空字符串。
+    """
+    try:
+        response = ChatResponse.model_validate_json(payload)
+    except ValidationError as exc:
+        logger.warning(f"AI 响应结构异常: {exc}")
+        return ""
+
+    if not response.choices:
+        logger.warning("AI 响应缺少 choices")
+        return ""
+    return response.choices[0].message.content
+
+
+async def request_reply(message: str, open_id: str) -> str:
+    """向 LLM 请求一次回复，并把成功的一轮写入历史。
+
+    只有请求成功时才落库用户消息与助手回复，避免失败时留下孤立轮次。
+
+    Args:
+        message: 用户输入。
+        open_id: 会话标识。
+
+    Returns:
+        AI 回复文本；失败时返回固定提示。
+    """
+    async with _session_lock(open_id):
+        return await _request_and_store(message, open_id)
+
+
+async def clear_history(open_id: str) -> None:
+    """在会话锁保护下清空历史。
+
+    与 request_reply 共用同一把锁，避免清空后又被挂起的回复写回。
+
+    Args:
+        open_id: 会话标识。
+    """
+    async with _session_lock(open_id):
+        PersonHistory(open_id).clearHistory()
+
+
+async def _request_and_store(message: str, open_id: str) -> str:
+    """在会话锁保护下完成一次「读历史 → 请求 → 落库」。
+
+    Args:
+        message: 用户输入。
+        open_id: 会话标识。
+
+    Returns:
+        AI 回复文本；失败时返回固定提示。
+    """
+    history = PersonHistory(open_id)
+    request = ChatRequest(
+        model=config.model,
+        messages=[
+            ChatMessage(**item) for item in history.getHistory()
+        ]
+        + [ChatMessage(role="user", content=message)],
     )
+    headers: dict[str, str] = {"Authorization": f"Bearer {config.apiKey}"}
 
-    for _ in range(3):
+    logger.info(f"请求 AI openid={open_id}, 内容={message}")
+
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        reply: str = ""
         try:
-            response = await client.post(url, headers=headers, json=payloda, timeout=60)
-            if response.status_code == 200:
-                aiReply = response.json()["choices"][0]["message"]["content"]
-                history.addHistory(
-                    ApiJson_Messages(
-                        role="assistant",
-                        content=aiReply,
-                    )
+            response: httpx.Response = await _get_client().post(
+                config.url,
+                headers=headers,
+                json=request.model_dump(),
+            )
+            if response.is_success:
+                reply = _extract_reply(response.content)
+            else:
+                logger.warning(
+                    f"AI 接口返回 {response.status_code}: {response.text[:200]}"
                 )
-                logger.info(f"Glm: openid: {openId}, 回复内容: {aiReply}")
-                return aiReply
+                # 4xx 是配置/鉴权/请求问题，重试不会成功
+                if 400 <= response.status_code < 500:
+                    logger.error(
+                        f"AI 接口客户端错误 {response.status_code}，不再重试"
+                    )
+                    return _FALLBACK_REPLY
+        except Exception as exc:
+            logger.warning(f"AI 接口请求异常（第 {attempt} 次）: {exc}")
 
-        except Exception as e:
-            logger.error(f"Glm 接口请求异常: {e}")
+        if reply:
+            # 一问一答在同一事务内写入，失败不会留下半轮对话
+            Message.addTurn(open_id, message, reply)
+            logger.info(f"AI 回复 openid={open_id}, 内容={reply}")
+            return reply
 
-    return "抱歉，Glm接口请求失败，请稍后再试。"
+        if attempt < _MAX_ATTEMPTS:
+            await asyncio.sleep(_RETRY_BACKOFF_SECONDS * attempt)
+
+    logger.error(f"AI 接口请求失败 openid={open_id}")
+    return _FALLBACK_REPLY

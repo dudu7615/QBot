@@ -1,18 +1,22 @@
-from typing import Optional, Any
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 import sqlite3
-from sqlmodel import SQLModel, Field, create_engine, Session, select, delete  # type: ignore
+from typing import Any, Optional
+
+from sqlmodel import SQLModel, Field, create_engine, Session, select, delete
 from sqlalchemy import (
     Column,
+    Enum as SAEnum,
     String,
-    CheckConstraint,
-    text,
     ForeignKey,
     event,
+    func,
     MetaData,
+    text,
 )
 
+from modules.Logger import logger
 from plugin.AiChat_d import Paths
 
 # 创建独立的metadata
@@ -24,8 +28,13 @@ class _Model(SQLModel):
     metadata = _sqlMetadata
 
 
-class User(_Model, table=True):
+class MessageRole(str, Enum):
+    assistant = "assistant"
+    user = "user"
+    system = "system"
 
+
+class User(_Model, table=True):
     openId: str = Field(primary_key=True, max_length=100)
     name: str = Field(index=True, max_length=50)
     createdAt: datetime = Field(default_factory=datetime.now)
@@ -35,7 +44,7 @@ class User(_Model, table=True):
     @staticmethod
     def addOrUpdate(openId: str, name: str) -> "User":
         with Session(_engine) as session:
-            user = session.get(User, openId)
+            user: Optional[User] = session.get(User, openId)
             if user is None:
                 user = User(openId=openId, name=name)
             else:
@@ -45,7 +54,8 @@ class User(_Model, table=True):
             try:
                 session.commit()
                 session.refresh(user)
-            except Exception:
+            except Exception as exc:
+                logger.error(f"保存用户失败 openId={openId}: {exc}")
                 session.rollback()
             return user
 
@@ -55,118 +65,197 @@ class User(_Model, table=True):
             return session.get(User, openId)
 
     @staticmethod
-    def delByOpenId(openId: str) -> None:
+    def touch(openId: str, message_count: int) -> None:
+        """更新最后活跃时间与消息计数。
+
+        Args:
+            openId: 用户 openid。
+            message_count: 该用户当前的消息总数。
+        """
         with Session(_engine) as session:
-            if user := session.get(User, openId):
-                session.delete(user)
-                try:
-                    session.commit()
-                except Exception:
-                    session.rollback()
-
-    @staticmethod
-    def getmessageCount(openId: str) -> int:
-        user = User.getByOpenId(openId)
-        return user.messageCount if user else 0
-
-
-class MessageRole(str, Enum):
-    assistant = "assistant"
-    user = "user"
-    system = "system"
+            user: Optional[User] = session.get(User, openId)
+            if user is None:
+                return
+            user.messageCount = message_count
+            user.latestChat = datetime.now()
+            session.add(user)
+            session.commit()
 
 
 class Message(_Model, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     openId: str = Field(
-        sa_column=Column(String, ForeignKey("user.openId", ondelete="CASCADE"))
+        sa_column=Column(
+            String,
+            ForeignKey("user.openId", ondelete="CASCADE"),
+            index=True,
+        )
     )
     content: str = Field(max_length=100000)
     createdAt: datetime = Field(default_factory=datetime.now)
     role: MessageRole = Field(
         sa_column=Column(
-            String(20),
-            CheckConstraint("role IN ('assistant','user','system')"),
+            SAEnum(
+                MessageRole,
+                native_enum=False,
+                length=20,
+                values_callable=lambda members: [item.value for item in members],
+                validate_strings=True,
+            ),
             nullable=False,
         )
     )
 
     @staticmethod
     def addMessage(openId: str, content: str, role: MessageRole) -> "Message":
-        with Session(_engine) as session:
-            if not (user := session.get(User, openId)):
-                User.addOrUpdate(openId, "Unknown")
-            else:
-                user.messageCount += 1
-                user.latestChat = datetime.now()
-            msg = Message(openId=openId, content=content, role=role)
-            session.add(msg)
+        """追加一条消息。
 
-            try:
-                session.commit()
-                session.refresh(msg)
-            except Exception:
-                session.rollback()
-            return msg
+        通过 CASCADE 外键保证用户行存在；messageCount 在写入后按实际行数重算，
+        避免与截断逻辑互相覆盖。
+
+        Raises:
+            SQLAlchemyError: 写入失败（由调用方决定是否中断本轮对话）。
+        """
+        with Session(_engine) as session:
+            if session.get(User, openId) is None:
+                User.addOrUpdate(openId, "unknown")
+
+            message = Message(openId=openId, content=content, role=role)
+            session.add(message)
+            session.commit()
+            session.refresh(message)
+            return message
+
+    @staticmethod
+    def addTurn(openId: str, user_content: str, assistant_content: str) -> None:
+        """原子写入一问一答。
+
+        同一事务内提交两条消息并更新用户活跃信息，避免进程中断或写入
+        失败时历史里只剩半轮对话。
+
+        Args:
+            openId: 用户标识。
+            user_content: 用户消息。
+            assistant_content: 助手回复。
+
+        Raises:
+            SQLAlchemyError: 写入失败。
+        """
+        with Session(_engine) as session:
+            if session.get(User, openId) is None:
+                User.addOrUpdate(openId, "unknown")
+
+            session.add(
+                Message(openId=openId, content=user_content, role=MessageRole.user)
+            )
+            session.add(
+                Message(
+                    openId=openId,
+                    content=assistant_content,
+                    role=MessageRole.assistant,
+                )
+            )
+            session.commit()
+
+        Message._refresh_user_activity(openId)
+
+    @staticmethod
+    def _refresh_user_activity(openId: str) -> None:
+        """按实际行数刷新用户的 messageCount 与最后活跃时间。
+
+        Args:
+            openId: 用户标识。
+        """
+        User.touch(openId, Message.countByOpenId(openId))
+
+    @staticmethod
+    def countByOpenId(openId: str) -> int:
+        with Session(_engine) as session:
+            statement = select(func.count()).where(Message.openId == openId)
+            return int(session.exec(statement).one())
+
+    @staticmethod
+    def countByRole(openId: str, role: MessageRole) -> int:
+        with Session(_engine) as session:
+            statement = (
+                select(func.count())
+                .where(Message.openId == openId)
+                .where(Message.role == role)
+            )
+            return int(session.exec(statement).one())
 
     @staticmethod
     def getByOpenId(openId: str) -> list["Message"]:
+        """按对话顺序返回用户全部消息。
+
+        排序规则：system prompt 始终在最前，其余按写入顺序（createdAt、id）。
+
+        Args:
+            openId: 用户 openid。
+
+        Returns:
+            消息列表。
+        """
         with Session(_engine) as session:
             statement = (
                 select(Message)
                 .where(Message.openId == openId)
-                .order_by(text("createdAt ASC"))
+                .order_by(text("createdAt ASC, id ASC"))
             )
-            results = session.exec(statement)
-            return list(results)
+            messages: list[Message] = list(session.exec(statement))
+
+        system: list[Message] = [
+            item for item in messages if item.role == MessageRole.system
+        ]
+        others: list[Message] = [
+            item for item in messages if item.role != MessageRole.system
+        ]
+        return system + others
 
     @staticmethod
     def clearByOpenId(openId: str) -> None:
         with Session(_engine) as session:
-            # 极简批量删除（保留核心优化，减少锁持有时间）
-            statement = delete(Message).where(Message.openId == openId)  # type: ignore
-            session.exec(statement)
-
-            if user := session.get(User, openId):
-                user.messageCount = 0
-                user.latestChat = datetime.now()
+            session.exec(delete(Message).where(Message.openId == openId))  # type: ignore[arg-type]
             try:
                 session.commit()
-            except Exception:
+            except Exception as exc:
+                logger.error(f"清空历史失败 openId={openId}: {exc}")
                 session.rollback()
 
     @staticmethod
-    def truncateTo(openId: str, keep_count: int) -> None:
-        """保留最近 keep_count 条消息，删除更早的。
+    def resetMessageCount(openId: str) -> None:
+        User.touch(openId, 0)
+
+    @staticmethod
+    def truncateToIds(openId: str, keep_ids: set[int]) -> None:
+        """只保留指定 id 的非 system 消息，其余删除。
 
         Args:
             openId: 用户 openid。
-            keep_count: 保留的最新消息数量（含 system prompt）。
+            keep_ids: 需要保留的消息 id 集合（不含 system prompt）。
         """
         with Session(_engine) as session:
-            all_msgs: list[Message] = list(
-                session.exec(
-                    select(Message)
-                    .where(Message.openId == openId)
-                    .order_by(text("createdAt DESC"))
-                )
+            statement = (
+                select(Message)
+                .where(Message.openId == openId)
+                .where(Message.role != MessageRole.system)
             )
-            if len(all_msgs) > keep_count:
-                for msg in all_msgs[keep_count:]:
-                    session.delete(msg)
-                if user := session.get(User, openId):
-                    user.messageCount = keep_count
-                    user.latestChat = datetime.now()
+            for message in session.exec(statement):
+                if message.id is not None and message.id not in keep_ids:
+                    session.delete(message)
+
             try:
                 session.commit()
-            except Exception:
+            except Exception as exc:
+                logger.error(f"截断历史失败 openId={openId}: {exc}")
                 session.rollback()
 
+        Message._refresh_user_activity(openId)
 
 # 连接 SQLite 数据库
-_sqlite_file = Paths.DATA / "chat.db"
+_sqlite_file: Path = Paths.DATA / "chat.db"
 _sqlite_file.parent.mkdir(parents=True, exist_ok=True)
-_sqlite_url = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
+_sqlite_url: str = f"sqlite:///{_sqlite_file.absolute().as_posix()}"
 _engine = create_engine(
     _sqlite_url,
     connect_args={"check_same_thread": False},
@@ -175,7 +264,7 @@ _engine = create_engine(
 
 
 @event.listens_for(_engine, "connect")
-def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any):  # type: ignore
+def _sqlitePragma(dbapi_connection: sqlite3.Connection, connection_record: Any) -> None:  # type: ignore[unused-ignore]
     cursor = dbapi_connection.cursor()
     # 仅保留【必选核心配置】，剔除冗余调试和进阶配置，简洁高效
     cursor.execute("PRAGMA foreign_keys = ON")  # 外键检查（保障数据完整性）

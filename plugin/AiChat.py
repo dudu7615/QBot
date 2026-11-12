@@ -1,13 +1,40 @@
+from time import monotonic
+
 from modules.Logger import logger
 from modules.Types import MessageData, MessageType
 from modules import HttpSender
 from plugin.PluginBase import PluginBase
-from plugin.AiChat_d import RequApi
-from plugin.AiChat_d.History import PersonHistory
+from plugin.AiChat_d.RequApi import clear_history, request_reply
+
+_CLEAR_COMMANDS = {"clear"}
+_COMMAND_PREFIXES = ("!", "！")
+
+# 群聊未 @ 机器人时，两次自动回复之间的最小间隔（秒）。
+# 群消息量远大于私聊，全部交给 LLM 会打爆上游配额。
+GROUP_REPLY_COOLDOWN_SECONDS: float = 30.0
 
 
 class AiChat(PluginBase):
     usable = True
+
+    def __init__(self) -> None:
+        self._last_group_reply: dict[str, float] = {}
+
+    def _allow_group_reply(self, group_openid: str) -> bool:
+        """判断群聊里是否可以再自动回复一次。
+
+        Args:
+            group_openid: 群 openid。
+
+        Returns:
+            距上次自动回复超过冷却时间时为 True。
+        """
+        now: float = monotonic()
+        last: float | None = self._last_group_reply.get(group_openid)
+        if last is not None and now - last < GROUP_REPLY_COOLDOWN_SECONDS:
+            return False
+        self._last_group_reply[group_openid] = now
+        return True
 
     @property
     def messageType(
@@ -24,51 +51,57 @@ class AiChat(PluginBase):
         return "AiChat"
 
     @staticmethod
-    def _reply_target(message: MessageData) -> tuple[str, str]:
-        """根据消息类型返回 (发送方式, 目标 ID)。
+    def _session_id(message: MessageData) -> str:
+        """返回会话标识。
+
+        私聊与群聊分别使用独立的命名空间：同一个人的 union_openid 在两种
+        场景下相同，直接用它做键会让群里的请求读到私聊内容，并把私聊
+        内容回复到群里。
+
+        Args:
+            message: 收到的消息。
 
         Returns:
-            ("person", author_id) 或 ("group", group_openid)
+            会话标识，形如 ``c2c:<openid>`` 或 ``group:<group_openid>:<openid>``。
         """
-        if message["t"] in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
-            return ("group", message["d"]["group_openid"])
-        return ("person", message["d"]["author"]["id"])
+        author = message.d.author
+        identity: str = author.union_openid or author.id
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            return f"group:{message.d.group_openid}:{identity}"
+        return f"c2c:{identity}"
 
-    async def run(self, message: MessageData):
-        content = message["d"]["content"]
-        author = message["d"]["author"]
-        union_id = author["union_openid"] or author["id"]
-        if content.startswith("!") or content.startswith("！"):
-            command = content.split(" ")[0][1:]
-            match command:
-                case "clear":
-                    PersonHistory(union_id).clearHistory()
+    async def _reply(self, text: str, message: MessageData) -> None:
+        """按消息来源回复文本。
 
-                    send_type, target = self._reply_target(message)
-                    if send_type == "group":
-                        await HttpSender.sendText2Group(
-                            "已清空历史记录", message, target
-                        )
-                    else:
-                        await HttpSender.sendText2Person(
-                            "已清空历史记录", message, target
-                        )
-                case _:
-                    logger.warning(f"未知命令: {command}")
-                    send_type, target = self._reply_target(message)
-                    if send_type == "group":
-                        await HttpSender.sendText2Group(
-                            "使用 “!clear” 清空历史记录", message, target
-                        )
-                    else:
-                        await HttpSender.sendText2Person(
-                            "使用 “!clear” 清空历史记录", message, target
-                        )
-
+        Args:
+            text: 回复内容。
+            message: 收到的消息。
+        """
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            await HttpSender.sendText2Group(text, message, message.d.group_openid)
         else:
-            reply = await RequApi.RequApi(content, union_id)
-            send_type, target = self._reply_target(message)
-            if send_type == "group":
-                await HttpSender.sendText2Group(reply, message, target)
+            await HttpSender.sendText2Person(text, message, message.d.author.id)
+
+    async def run(self, message: MessageData) -> None:
+        content: str = message.d.content
+        session_id: str = self._session_id(message)
+
+        if content.startswith(_COMMAND_PREFIXES):
+            command: str = content[1:].split(" ")[0].strip()
+            if command in _CLEAR_COMMANDS:
+                await clear_history(session_id)
+                await self._reply("已清空历史记录", message)
             else:
-                await HttpSender.sendText2Person(reply, message, target)
+                logger.warning(f"未知命令: {command}")
+                await self._reply("使用 “!clear” 清空历史记录", message)
+            return
+
+        # 群聊里只有被 @ 才必定回复，普通群消息按冷却时间限流
+        if message.t == "GROUP_MESSAGE_CREATE" and not self._allow_group_reply(
+            message.d.group_openid
+        ):
+            logger.debug(f"群聊自动回复冷却中，跳过: {message.d.group_openid[:12]}")
+            return
+
+        reply: str = await request_reply(content, session_id)
+        await self._reply(reply, message)

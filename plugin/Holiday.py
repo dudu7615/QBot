@@ -1,10 +1,12 @@
+import asyncio
+from datetime import date, datetime
+
 from modules.Logger import logger
 from modules.Types import MessageData, MessageType
 from modules import HttpSender
 from plugin.PluginBase import PluginBase
-from plugin.Holiday_d.SqlCache import Cache
 from plugin.Holiday_d import RequApi
-from datetime import datetime
+from plugin.Holiday_d.SqlCache import Cache
 
 
 class Holiday(PluginBase):
@@ -27,27 +29,36 @@ class Holiday(PluginBase):
     def pluginName(self) -> str:
         return "Holiday"
 
-    async def run(self, message: MessageData):
+    @staticmethod
+    def _format(cache: Cache) -> str:
+        """把一条假期记录格式化为 ``名称（YYYY-MM-DD）``。"""
+        return f"{cache.name}（{cache.date.strftime('%Y-%m-%d')}）"
+
+    async def run(self, message: MessageData) -> None:
         if not self._checked:
-            RequApi.checkAndUpdata()
-            self._checked = True
+            # 拉取年度数据是同步 HTTP，放到线程池避免阻塞事件循环。
+            # 只有刷新成功才置位，否则下次请求会继续重试。
+            refreshed: bool = await asyncio.to_thread(RequApi.ensure_cache_fresh)
+            self._checked = refreshed
 
-        author = message["d"]["author"]
+        today: date = date.today()
+        # SQLite 读取放到线程池，避免阻塞事件循环
+        next_holiday, next_de_holiday = await asyncio.to_thread(
+            lambda: (Cache.getNextHoliday(today), Cache.getNextDeHoliday(today))
+        )
 
-        nextHoliday = Cache.getNextHoliday(datetime.now())
-        nextDeHoliday = Cache.getNextDeHoliday(datetime.now())
-
-        if nextHoliday is None:
+        if next_holiday is None:
             reply = "没有找到下一个假期"
-        elif nextDeHoliday is None:
-            reply = f"下一个假期是{nextHoliday.name}，日期为{nextHoliday.date.strftime('%Y-%m-%d')}"
+        elif next_de_holiday is None:
+            reply = f"下一个假期是{self._format(next_holiday)}"
         else:
             reply = (
-                f"下一个假期是{nextHoliday.name}，日期为{nextHoliday.date.strftime('%Y-%m-%d')}\n"
-                f"下一个调休是{nextDeHoliday.name}，日期为{nextDeHoliday.date.strftime('%Y-%m-%d')}"
+                f"下一个假期是{self._format(next_holiday)}\n"
+                f"下一个调休是{self._format(next_de_holiday)}"
             )
 
-        if message["t"] in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
-            await HttpSender.sendText2Group(reply, message, message["d"]["group_openid"])
+        logger.info(f"查询最近假期: {reply}")
+        if message.t in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
+            await HttpSender.sendText2Group(reply, message, message.d.group_openid)
         else:
-            await HttpSender.sendText2Person(reply, message, author["id"])
+            await HttpSender.sendText2Person(reply, message, message.d.author.id)

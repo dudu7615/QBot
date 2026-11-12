@@ -1,6 +1,6 @@
 apiKey: sk-3PNdKhLiSokJybbnW4O9aER1IZjiQ8lNYJS9c9SBAWjYRxUW
 url: http://localhost:12001/v1/chat/completions
-model: deepseek-v4-flash
+model: main
 personality: xy.md
 max_context_length: 50
 keep_recent: 30

@@ -49,6 +49,13 @@ RATE_LIMIT_DELAY: float = 60.0
 QUICK_DISCONNECT_THRESHOLD: float = 5.0
 MAX_QUICK_DISCONNECT_COUNT: int = 3
 
+# 心跳 ACK 看门狗：超过 interval 的该倍数未收到任何帧即判定连接半开
+HEARTBEAT_TIMEOUT_FACTOR: float = 2.5
+
+# 消息处理并发与退出宽限
+MAX_CONCURRENT_HANDLERS: int = 8
+SHUTDOWN_GRACE_SECONDS: float = 10.0
+
 ONBOARD_POLL_INTERVAL: float = 2.0
 ONBOARD_API_TIMEOUT: float = 10.0
 
@@ -57,7 +64,6 @@ ONBOARD_API_TIMEOUT: float = 10.0
 # ---------------------------------------------------------------------------
 
 MAX_MESSAGE_LENGTH: int = 4000
-DEDUP_WINDOW_SECONDS: int = 300
 DEDUP_MAX_SIZE: int = 1000
 
 # ---------------------------------------------------------------------------
@@ -110,6 +116,7 @@ class WSCloseCode(IntEnum):
     NOT_AUTHENTICATED = 4003
     AUTHENTICATION_FAILED = 4004
     ALREADY_AUTHENTICATED = 4005
+    SESSION_TIMEOUT_EXPIRED = 4006
     INVALID_SEQ = 4007
     RATE_LIMITED = 4008
     SESSION_TIMEOUT = 4009
@@ -129,9 +136,10 @@ class WSCloseCode(IntEnum):
     SESSION_JOIN_FAILED = 4911
     SESSION_RESUME_FAILED = 4912
     SESSION_RESUME_INVALID = 4913
+    SESSION_TIMED_OUT = 4907
+    SESSION_CREATE_RATE_LIMITED = 4908
     BOT_OFFLINE = 4914
     BOT_BANNED = 4915
-    SESSION_TIMED_OUT = 4907  # 已存在的 4900-4915 范围补充
 
     @property
     def is_fatal(self) -> bool:
@@ -152,6 +160,8 @@ class WSCloseCode(IntEnum):
     def is_session_invalid(self) -> bool:
         """是否需要清除 session 重新 identify。"""
         return self in {
+            WSCloseCode.SESSION_TIMEOUT_EXPIRED,
+            WSCloseCode.INVALID_SEQ,
             WSCloseCode.SESSION_INVALID,
             WSCloseCode.SESSION_EXPIRED,
             WSCloseCode.SESSION_NOT_FOUND,
@@ -176,6 +186,7 @@ class WSCloseCode(IntEnum):
             WSCloseCode.NOT_AUTHENTICATED: "未鉴权",
             WSCloseCode.AUTHENTICATION_FAILED: "鉴权失败（token 无效）",
             WSCloseCode.ALREADY_AUTHENTICATED: "重复鉴权",
+            WSCloseCode.SESSION_TIMEOUT_EXPIRED: "会话超时",
             WSCloseCode.INVALID_SEQ: "无效 seq",
             WSCloseCode.RATE_LIMITED: "被限流",
             WSCloseCode.SESSION_TIMEOUT: "连接超时",

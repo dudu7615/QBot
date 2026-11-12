@@ -43,18 +43,6 @@ class QQBotConfig(BaseModel):
 # ======================================================================
 
 
-class AccessTokenData(BaseModel):
-    """Access Token 的数据模型。
-
-    Attributes:
-        access_token: 从 QQ Bot API 获取的 access_token。
-        expires_in: Token 过期时间戳（秒，UNIX 时间）。
-    """
-
-    access_token: str
-    expires_in: float  # UNIX timestamp
-
-
 class TokenResponse(BaseModel):
     """调用 /app/getAppAccessToken 返回的响应体。
 
@@ -401,10 +389,6 @@ class ApprovalRequest(BaseModel):
 # ======================================================================
 
 # POST 消息的函数签名（适配器注入用）
-PostMessageFn = Callable[
-    [str, str, str | None, InlineKeyboard | None],
-    Coroutine["asyncio.AbstractEventLoop", object, dict[str, object]],
-]
 
 
 # ======================================================================

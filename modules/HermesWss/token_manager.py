@@ -13,7 +13,7 @@ import httpx
 
 from .constants import TOKEN_URL, DEFAULT_API_TIMEOUT
 from .exceptions import QQTokenError
-from .models import AccessTokenData, TokenResponse
+from .models import TokenResponse
 from .utils import get_api_headers, build_user_agent
 
 

@@ -15,13 +15,14 @@ QBot — QQ Bot 主入口。
 from __future__ import annotations
 
 import asyncio
-import sys
 
 from modules.Config import config
 from modules.Logger import logger
-from modules.Types import MessageData
+from modules.Types import MessageAuthor, MessageContent, MessageData
 from modules.HermesWss import QQWebSocketClient, QQMessage
 from plugin import PluginMeta
+from plugin.AiChat_d import RequApi
+from plugin.Weather_d import GetWeather
 
 
 class MainServer:
@@ -33,7 +34,6 @@ class MainServer:
     plugins = PluginMeta.plugins
 
     def __init__(self) -> None:
-        self.managedMessage: list[str] = []
         self.client: QQWebSocketClient | None = None
         logger.info(f"插件注册完成, 共 {len(self.plugins)} 个插件")
 
@@ -43,8 +43,8 @@ class MainServer:
 
     async def start(self) -> None:
         """启动 HermesWss WebSocket 客户端。"""
-        app_id: str = config["appId"]
-        client_secret: str = config["clientSecret"]
+        app_id: str = config.appId
+        client_secret: str = config.clientSecret
 
         logger.info(f"正在启动 WebSocket 客户端 (app_id={app_id})...")
 
@@ -58,32 +58,42 @@ class MainServer:
         success: bool = await self.client.start()
         if not success:
             logger.error("WebSocket 客户端启动失败")
-            sys.exit(1)
+            raise RuntimeError("WebSocket 客户端启动失败")
 
         logger.info("WebSocket 客户端启动成功, 等待消息...")
 
+    async def wait_closed(self) -> None:
+        """等待客户端不可恢复地停止。
+
+        客户端放弃重连时置位 stopped 事件，避免进程带着失效连接挂死。
+        """
+        if self.client is not None:
+            await self.client.stopped.wait()
+
     async def stop(self) -> None:
-        """停止 HermesWss WebSocket 客户端。"""
+        """停止 WebSocket 客户端并释放插件持有的 HTTP 连接。"""
         if self.client is not None:
             logger.info("正在停止 WebSocket 客户端...")
             await self.client.stop()
             self.client = None
+
+        await RequApi.close()
+        await GetWeather.close()
         logger.info("应用已停止")
 
     # ==================================================================
     # 消息转换 (QQMessage → 旧 MessageData 格式)
     # ==================================================================
 
-    def _to_old_message_data(self, msg: QQMessage) -> MessageData:
-        """将 HermesWss 的 QQMessage 转换为旧版插件系统的 MessageData。
+    def _to_message_data(self, msg: QQMessage) -> MessageData:
+        """将 HermesWss 的 QQMessage 转换为插件层的 MessageData。
 
         Args:
             msg: HermesWss 消息对象。
 
         Returns:
-            兼容旧插件系统的 MessageData TypedDict。
+            插件层使用的 MessageData。
         """
-        # 确定发送者 ID（兼容旧插件用 author["id"] 做回复目标）
         author_id: str = ""
         group_openid: str = msg.group_openid or ""
         if msg.event_type == "C2C_MESSAGE_CREATE":
@@ -91,25 +101,22 @@ class MainServer:
         elif msg.event_type in {"GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE"}:
             author_id = msg.group_member_openid or msg.group_openid or ""
 
-        return {
-            "id": msg.id,
-            "d": {
-                "id": msg.id,
-                "content": msg.content,
-                "timestamp": msg.timestamp,
-                "author": {
-                    "id": author_id,
-                    "user_openid": msg.user_openid or "",
-                    "union_openid": (
-                        msg.author.union_openid if msg.author else ""
-                    ) or "",
-                },
-                "message_type": 0,
-                "group_openid": group_openid,
-            },
-            "t": msg.event_type,
-            "event_id": msg.event_id,
-        }
+        return MessageData(
+            id=msg.id,
+            d=MessageContent(
+                id=msg.id,
+                content=msg.content,
+                timestamp=msg.timestamp,
+                author=MessageAuthor(
+                    id=author_id,
+                    user_openid=msg.user_openid or "",
+                    union_openid=(msg.author.union_openid if msg.author else "") or "",
+                ),
+                group_openid=group_openid,
+            ),
+            t=msg.event_type,
+            event_id=msg.event_id,
+        )
 
     # ==================================================================
     # HermesWss 回调
@@ -123,20 +130,11 @@ class MainServer:
         Args:
             msg: HermesWss 消息对象。
         """
-        # 转为旧格式
-        message: MessageData = self._to_old_message_data(msg)
+        message: MessageData = self._to_message_data(msg)
         content: str = msg.content
         message_type: str = msg.event_type
 
-        # 消息去重
-        if msg.id in self.managedMessage:
-            logger.warning(f"消息去重跳过: {msg.id[:12]}...")
-            return
-        self.managedMessage.append(msg.id)
-        if len(self.managedMessage) > 1000:
-            self.managedMessage = self.managedMessage[-500:]
-
-        logger.info(f"收到消息 [{message_type}] content={message['d']['content']}")
+        logger.info(f"收到消息 [{message_type}] content={message.d.content}")
 
         # 统一处理插件调用逻辑（与原 handleMessage 一致）
         await self._dispatch_to_plugins(message, content, message_type)
@@ -207,15 +205,23 @@ server = MainServer()
 
 async def main() -> None:
     """异步主入口。"""
-    await server.start()
-
-    # 保持运行，直到收到中断信号
+    exit_code: int = 0
     try:
-        await asyncio.Future()  # 永久等待
-    except KeyboardInterrupt:
+        await server.start()
+        # 保持运行，直到客户端放弃重连或收到 Ctrl+C
+        await server.wait_closed()
+        logger.warning("WebSocket 客户端已停止，进程退出")
+        exit_code = 1
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("收到中断信号")
+    except Exception as exc:
+        logger.error(f"启动失败: {exc}")
+        exit_code = 1
     finally:
         await server.stop()
+
+    if exit_code != 0:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":
